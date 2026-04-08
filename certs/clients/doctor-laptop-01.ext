@@ -1,0 +1,6 @@
+subjectAltName=@alt_names
+extendedKeyUsage=clientAuth
+keyUsage=digitalSignature,keyEncipherment
+
+[alt_names]
+DNS.1=doctor-laptop-01

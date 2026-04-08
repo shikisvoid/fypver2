@@ -1,0 +1,8 @@
+subjectAltName=@alt_names
+extendedKeyUsage=serverAuth
+keyUsage=digitalSignature,keyEncipherment
+
+[alt_names]
+DNS.1=api-gateway
+DNS.2=localhost
+DNS.3=127.0.0.1

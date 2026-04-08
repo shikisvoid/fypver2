@@ -1,0 +1,22 @@
+{
+  "version": "2026-04-06.2",
+  "grantTtlSec": 600,
+  "spaAdmissionTtlSec": 300,
+  "registrationToken": "sdp_register_demo_token",
+  "clients": [
+    {
+      "clientId": "doctor-laptop-01",
+      "clientSecret": "doctor_agent_secret_demo",
+      "spaSecret": "doctor_spa_secret_demo",
+      "certificateCn": "doctor-laptop-01",
+      "description": "Doctor demo workstation"
+    },
+    {
+      "clientId": "admin-laptop-01",
+      "clientSecret": "admin_agent_secret_demo",
+      "spaSecret": "admin_spa_secret_demo",
+      "certificateCn": "admin-laptop-01",
+      "description": "Admin demo workstation"
+    }
+  ]
+}
