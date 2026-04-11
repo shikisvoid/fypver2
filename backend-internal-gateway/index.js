@@ -7,7 +7,7 @@ const https = require('https');
 const PORT = parseInt(process.env.PORT || '3443', 10);
 const ORIGIN_URL = process.env.ORIGIN_URL || 'http://backend:3000';
 const CONTROLLER_URL = process.env.SDP_ACCESS_CONTROLLER_URL || 'http://spa-controller:7001';
-const REGISTRATION_TOKEN = process.env.SDP_REGISTRATION_TOKEN || 'sdp_register_demo_token';
+const REGISTRATION_TOKEN = readSecret('SDP_REGISTRATION_TOKEN', 'sdp_register_demo_token');
 const GATEWAY_ID = process.env.GATEWAY_ID || 'backend-internal-gateway';
 const GATEWAY_URL = process.env.GATEWAY_URL || 'https://backend-internal-gateway:3443';
 const SERVICE_ID = process.env.SERVICE_ID || 'hospital-backend-app';
@@ -19,6 +19,15 @@ const PATH_PREFIXES = (process.env.SERVICE_PATH_PREFIXES || '/api/patients,/api/
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
+
+function readSecret(envName, demoFallback) {
+  const value = process.env[envName];
+  if (typeof value === 'string' && value.length > 0) return value;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`${envName} is required in production`);
+  }
+  return demoFallback;
+}
 
 function postJson(urlString, payload, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
@@ -167,7 +176,7 @@ const tlsOptions = {
   key: fs.readFileSync(TLS_SERVER_KEY),
   ca: fs.readFileSync(TLS_CA_CERT),
   requestCert: true,
-  rejectUnauthorized: false
+  rejectUnauthorized: true
 };
 
 https.createServer(tlsOptions, app).listen(PORT, '0.0.0.0', () => {

@@ -14,7 +14,7 @@ services:
       - sdp-net
     environment:
       POSTGRES_USER: hospital
-      POSTGRES_PASSWORD: F1UFDk8H36Ry2RITAvnErulW
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       POSTGRES_DB: hospital_db
     volumes:
       - db-data:/var/lib/postgresql/data
@@ -46,13 +46,13 @@ services:
     networks:
       - sdp-net
     environment:
-      NODE_ENV: development
-      JWT_SECRET: sdp_phase2_shared_secret_change_me
-      DATABASE_URL: postgres://hospital:F1UFDk8H36Ry2RITAvnErulW@db:5432/hospital_db
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-sdp_phase2_shared_secret_change_me}
+      DATABASE_URL: postgres://hospital:${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}@db:5432/hospital_db
       DB_HOST: db
       DB_PORT: 5432
       DB_USER: hospital
-      DB_PASSWORD: F1UFDk8H36Ry2RITAvnErulW
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       DB_NAME: hospital_db
       ENCRYPTION_SERVICE_URL: http://encryption:3001
       EDR_HOST_ID: hospital-backend
@@ -78,8 +78,6 @@ services:
       - ./Encryption:/app
       - encryption-data:/app/storage
     command: sh -c "npm install && node server.js"
-    ports:
-      - "127.0.0.1:3001:3001"
     restart: unless-stopped
 
   iam:
@@ -91,7 +89,8 @@ services:
     networks:
       - sdp-net
     environment:
-      JWT_SECRET: sdp_phase2_shared_secret_change_me
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-sdp_phase2_shared_secret_change_me}
       EDR_HOST_ID: hospital-iam
       EDR_TARGET: http://monitor:9090/ingest/telemetry
       TELEMETRY_HOST: monitor
@@ -102,8 +101,6 @@ services:
       - ./Hospital-Frontend/server:/app
       - ./agents/real-edr:/edr
     command: sh -c "apk add --no-cache procps net-tools && npm install && (HOST_ID=hospital-iam TARGET=http://monitor:9090/ingest/telemetry INTERVAL_MS=3000 WATCH_DIR=/app node /edr/agent.js &) && node index.js"
-    ports:
-      - "4000:4000"
     restart: unless-stopped
 
   sdp-controller:
@@ -130,11 +127,14 @@ services:
       - "127.0.0.1:7001:7001"
       - "127.0.0.1:62201:62201/udp"
     environment:
-      JWT_SECRET: sdp_phase2_shared_secret_change_me
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-sdp_phase2_shared_secret_change_me}
       SDP_POLICY_ENGINE_URL: http://sdp-controller:7000
-      SDP_GRANT_SIGNING_SECRET: sdp_access_grant_secret_change_me
+      SDP_GRANT_SIGNING_SECRET: ${SDP_GRANT_SIGNING_SECRET:-sdp_access_grant_secret_change_me}
+      SDP_REGISTRATION_TOKEN: ${SDP_REGISTRATION_TOKEN:-sdp_register_demo_token}
       SDP_ACCESS_CONFIG_FILE: /app/config.json
       SDP_SPA_UDP_PORT: 62201
+      SDP_CLIENTS_JSON: ${SDP_CLIENTS_JSON:-}
     volumes:
       - ./spa-controller:/app
     command: sh -c "npm install && node index.js"
@@ -152,10 +152,11 @@ services:
     ports:
       - "127.0.0.1:3443:3443"
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3443
       ORIGIN_URL: http://backend:3000
       SDP_ACCESS_CONTROLLER_URL: http://spa-controller:7001
-      SDP_REGISTRATION_TOKEN: sdp_register_demo_token
+      SDP_REGISTRATION_TOKEN: ${SDP_REGISTRATION_TOKEN:-sdp_register_demo_token}
       GATEWAY_ID: backend-internal-gateway
       GATEWAY_URL: https://backend-internal-gateway:3443
       SERVICE_ID: hospital-backend-app
@@ -182,14 +183,15 @@ services:
       - sdp-net
     environment:
       PORT: 8443
-      JWT_SECRET: sdp_phase2_shared_secret_change_me
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-sdp_phase2_shared_secret_change_me}
       IAM_URL: http://iam:4000
       BACKEND_URL: https://backend-internal-gateway:3443
       SDP_ENFORCEMENT: true
       SDP_CONTROLLER_URL: http://sdp-controller:7000
       SDP_FAIL_OPEN: false
       SDP_ACCESS_CONTROLLER_URL: http://spa-controller:7001
-      SDP_REGISTRATION_TOKEN: sdp_register_demo_token
+      SDP_REGISTRATION_TOKEN: ${SDP_REGISTRATION_TOKEN:-sdp_register_demo_token}
       GATEWAY_ID: external-api-gateway
       GATEWAY_PUBLIC_URL: https://api-gateway:8443
       TLS_SERVER_CERT: /certs/external-gateway/external-gateway-server.crt
@@ -222,11 +224,21 @@ services:
     environment:
       VITE_API_URL: http://localhost:8088
       VITE_IAM_URL: http://localhost:8088
+      VITE_PROXY_TARGET: https://api-gateway:8443
+      SDP_ACCESS_CONTROLLER_URL: http://spa-controller:7001
+      SDP_SPA_HOST: spa-controller
+      SDP_SPA_PORT: 62201
+      SDP_CLIENT_ID: admin-laptop-01
+      SDP_CLIENT_SECRET: ${SDP_ADMIN_CLIENT_SECRET:-admin_agent_secret_demo}
+      SDP_SPA_SECRET: ${SDP_ADMIN_SPA_SECRET:-admin_spa_secret_demo}
+      SDP_SERVICE_ID: hospital-backend-app
+      SDP_CERT_DIR: /certs
       EDR_HOST_ID: hospital-frontend
       EDR_TARGET: http://monitor:9090/ingest/telemetry
     volumes:
       - ./Hospital-Frontend:/app
       - ./agents/real-edr:/edr
+      - ./certs:/certs:ro
     command: sh -c "apk add --no-cache procps net-tools && npm install && (HOST_ID=hospital-frontend TARGET=http://monitor:9090/ingest/telemetry INTERVAL_MS=5000 WATCH_DIR=/app node /edr/agent.js &) && node /app/node_modules/vite/bin/vite.js --host 0.0.0.0"
     ports:
       - "5173:5173"
@@ -321,6 +333,9 @@ services:
       - PORT=4100
       - IAM_HOST=iam
       - IAM_PORT=4000
+      - SDP_ACCESS_CONTROLLER_HOST=spa-controller
+      - SDP_ACCESS_CONTROLLER_PORT=7001
+      - SDP_REGISTRATION_TOKEN=${SDP_REGISTRATION_TOKEN:-sdp_register_demo_token}
     depends_on:
       - monitor
     restart: unless-stopped
@@ -364,7 +379,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=hospital
-      - DB_PASSWORD=F1UFDk8H36Ry2RITAvnErulW
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       - DB_NAME=hospital_db
     command: sh -c "apk add --no-cache procps net-tools && npm install --production 2>/dev/null && node agent.js"
     depends_on:
@@ -391,7 +406,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=hospital
-      - DB_PASSWORD=F1UFDk8H36Ry2RITAvnErulW
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       - DB_NAME=hospital_db
     command: sh -c "apk add --no-cache procps net-tools && npm install --production 2>/dev/null && node agent.js"
     depends_on:
@@ -418,7 +433,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=hospital
-      - DB_PASSWORD=F1UFDk8H36Ry2RITAvnErulW
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       - DB_NAME=hospital_db
     command: sh -c "apk add --no-cache procps net-tools && npm install --production 2>/dev/null && node agent.js"
     depends_on:
@@ -445,7 +460,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=hospital
-      - DB_PASSWORD=F1UFDk8H36Ry2RITAvnErulW
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       - DB_NAME=hospital_db
     command: sh -c "apk add --no-cache procps net-tools && npm install --production 2>/dev/null && node agent.js"
     depends_on:
@@ -472,7 +487,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=hospital
-      - DB_PASSWORD=F1UFDk8H36Ry2RITAvnErulW
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       - DB_NAME=hospital_db
     command: sh -c "apk add --no-cache procps net-tools && npm install --production 2>/dev/null && node agent.js"
     depends_on:
@@ -499,7 +514,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=hospital
-      - DB_PASSWORD=F1UFDk8H36Ry2RITAvnErulW
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       - DB_NAME=hospital_db
     command: sh -c "apk add --no-cache procps net-tools && npm install --production 2>/dev/null && node agent.js"
     depends_on:
@@ -526,7 +541,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=hospital
-      - DB_PASSWORD=F1UFDk8H36Ry2RITAvnErulW
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       - DB_NAME=hospital_db
     command: sh -c "apk add --no-cache procps net-tools && npm install --production 2>/dev/null && node agent.js"
     depends_on:
@@ -553,7 +568,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=hospital
-      - DB_PASSWORD=F1UFDk8H36Ry2RITAvnErulW
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
       - DB_NAME=hospital_db
     command: sh -c "apk add --no-cache procps net-tools && npm install --production 2>/dev/null && node agent.js"
     depends_on:

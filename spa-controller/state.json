@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-10T11:12:37.889Z",
+  "gateways": [
+    {
+      "gatewayId": "backend-internal-gateway",
+      "gatewayType": "internal",
+      "url": "https://backend-internal-gateway:3443",
+      "serviceIds": [
+        "hospital-backend-app"
+      ],
+      "description": "Internal gateway for backend services",
+      "registeredAt": "2026-04-10T11:00:56.638Z"
+    },
+    {
+      "gatewayId": "external-api-gateway",
+      "gatewayType": "external",
+      "url": "https://api-gateway:8443",
+      "serviceIds": [
+        "hospital-backend-app"
+      ],
+      "description": "External gateway for hospital services",
+      "registeredAt": "2026-04-10T11:00:59.054Z"
+    }
+  ],
+  "services": [
+    {
+      "serviceId": "hospital-backend-app",
+      "name": "Hospital Backend App",
+      "entryGatewayId": "external-api-gateway",
+      "internalGatewayId": "backend-internal-gateway",
+      "originUrl": "http://backend:3000",
+      "pathPrefixes": [
+        "/api/patients",
+        "/api/appointments",
+        "/api/vitals",
+        "/api/prescriptions",
+        "/api/lab",
+        "/api/billing",
+        "/api/pharmacy",
+        "/api/files",
+        "/api/audit",
+        "/api/monitoring",
+        "/api/dashboard",
+        "/api/doctor",
+        "/api/receptionist",
+        "/api/nurse",
+        "/api/accountant",
+        "/api/notifications",
+        "/api/encryption",
+        "/api/doctors",
+        "/api/users"
+      ],
+      "requiresIdentity": true,
+      "registeredAt": "2026-04-10T11:00:56.674Z"
+    }
+  ],
+  "spaAdmissions": [],
+  "issuedGrants": [],
+  "usedSpaNonces": []
+}

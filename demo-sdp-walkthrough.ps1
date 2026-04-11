@@ -1,4 +1,3 @@
-# verify-sdp.ps1
 $ErrorActionPreference = "Stop"
 
 $composeFile = "docker-compose.sdp.yml"
@@ -21,6 +20,8 @@ $accountantMfaSecret = "IBSG27J4NN3HSZTQGY4SS2DMNRPEGJRZIJFW4423J5WDMUBFEVKA"
 $caCert = "certs\ca\ca.crt"
 $clientCert = "certs\clients\admin-laptop-01.crt"
 $clientKey = "certs\clients\admin-laptop-01.key"
+$auditLogFile = "spa-controller\audit.log"
+$stateFile = "spa-controller\state.json"
 
 function Invoke-NodeMtls {
     param(
@@ -104,6 +105,7 @@ function Wait-Http200 {
         [int]$TimeoutSec = 180,
         [switch]$UseMtls
     )
+
     $start = Get-Date
     while (((Get-Date) - $start).TotalSeconds -lt $TimeoutSec) {
         try {
@@ -129,7 +131,6 @@ function Invoke-CurlJson {
         [switch]$UseMtls
     )
 
-    $args = @("--silent", "--show-error", "--fail-with-body")
     if ($UseMtls) {
         $mtlsResp = Invoke-NodeMtls -Url $Url -Method $Method -Body $Body -Headers $Headers
         if ([int]$mtlsResp.statusCode -ge 400) {
@@ -138,6 +139,7 @@ function Invoke-CurlJson {
         return $mtlsResp.body | ConvertFrom-Json
     }
 
+    $args = @("--silent", "--show-error", "--fail-with-body")
     foreach ($k in $Headers.Keys) { $args += @("-H", "${k}: $($Headers[$k])") }
     if ($Method -ne "GET") {
         $args += @("-X", $Method)
@@ -161,12 +163,12 @@ function Get-HttpCode {
         [switch]$UseMtls
     )
 
-    $args = @("--silent", "--output", "NUL", "--write-out", "%{http_code}")
     if ($UseMtls) {
         $mtlsResp = Invoke-NodeMtls -Url $Url -Method $Method -Body $Body -Headers $Headers
         return [int]$mtlsResp.statusCode
     }
 
+    $args = @("--silent", "--output", "NUL", "--write-out", "%{http_code}")
     foreach ($k in $Headers.Keys) { $args += @("-H", "${k}: $($Headers[$k])") }
     if ($Method -ne "GET") {
         $args += @("-X", $Method)
@@ -183,22 +185,45 @@ function Get-TotpCode {
     return ($code | Select-Object -Last 1).Trim()
 }
 
+function Reset-IamRateLimit {
+    Write-Host "IAM rate limit hit. Restarting IAM container and retrying once..." -ForegroundColor Yellow
+    docker restart hospital-iam | Out-Null
+    Start-Sleep -Seconds 4
+    Wait-Http200 "$gatewayBase/health" 120 -UseMtls | Out-Null
+}
+
 function Login-WithMfa {
     param(
         [string]$Email,
         [string]$Password,
         [string]$MfaSecret,
-        [string]$ClientIdHeader
+        [int]$Attempt = 1
     )
 
     $loginBody = @{ email = $Email; password = $Password } | ConvertTo-Json -Compress
-    $loginResp = Invoke-CurlJson -Url "$gatewayBase/api/login" -Method "POST" -Body $loginBody -Headers @{ "x-sdp-client-id" = $ClientIdHeader } -UseMtls
+    try {
+        $loginResp = Invoke-CurlJson -Url "$gatewayBase/api/login" -Method "POST" -Body $loginBody -Headers @{ "x-sdp-client-id" = $clientId } -UseMtls
+    } catch {
+        if ($Attempt -eq 1 -and $_.Exception.Message -match "HTTP 429") {
+            Reset-IamRateLimit
+            return Login-WithMfa -Email $Email -Password $Password -MfaSecret $MfaSecret -Attempt 2
+        }
+        throw
+    }
     if (-not $loginResp.success) { throw "Login failed for ${Email}: $($loginResp.error)" }
 
     if ($loginResp.mfaRequired -eq $true) {
         $mfaCode = Get-TotpCode -Secret $MfaSecret
         $mfaBody = @{ email = $Email; code = $mfaCode } | ConvertTo-Json -Compress
-        $mfaResp = Invoke-CurlJson -Url "$gatewayBase/api/mfa/verify" -Method "POST" -Body $mfaBody -Headers @{ "x-sdp-client-id" = $ClientIdHeader } -UseMtls
+        try {
+            $mfaResp = Invoke-CurlJson -Url "$gatewayBase/api/mfa/verify" -Method "POST" -Body $mfaBody -Headers @{ "x-sdp-client-id" = $clientId } -UseMtls
+        } catch {
+            if ($Attempt -eq 1 -and $_.Exception.Message -match "HTTP 429") {
+                Reset-IamRateLimit
+                return Login-WithMfa -Email $Email -Password $Password -MfaSecret $MfaSecret -Attempt 2
+            }
+            throw
+        }
         if (-not $mfaResp.success) { throw "MFA failed for ${Email}: $($mfaResp.error)" }
         return $mfaResp.token
     }
@@ -270,87 +295,126 @@ function Get-NoMtlsCurlCode {
     return @{ exitCode = $LASTEXITCODE; httpCode = "$output" }
 }
 
-Write-Host "`n[0/13] Generating demo certificates..." -ForegroundColor Cyan
-powershell -ExecutionPolicy Bypass -File .\generate-demo-certs.ps1
+function Show-Step {
+    param(
+        [string]$Title,
+        [string]$WhatToSay
+    )
 
-Write-Host "[1/13] Starting SDP stack..." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host ("=" * 78) -ForegroundColor DarkGray
+    Write-Host $Title -ForegroundColor Cyan
+    Write-Host $WhatToSay -ForegroundColor Yellow
+}
+
+function Pause-Demo {
+    param([string]$Prompt = "Press Enter to continue")
+    Read-Host $Prompt | Out-Null
+}
+
+function Reset-DemoArtifacts {
+    if (Test-Path $auditLogFile) {
+        Remove-Item -LiteralPath $auditLogFile -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $stateFile) {
+        Remove-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Show-RecentAudit {
+    param(
+        [int]$Limit = 6
+    )
+
+    $audit = Invoke-RestMethod -Uri "$controllerBase/audit/recent?limit=$Limit" -Method GET -Headers @{ "x-registration-token" = $registrationToken }
+    Write-Host "Recent SDP audit events:" -ForegroundColor Magenta
+    foreach ($event in $audit.events) {
+        $details = $event.details | ConvertTo-Json -Compress
+        Write-Host " - $($event.eventType) :: $details" -ForegroundColor Gray
+    }
+}
+
+function Show-GrantState {
+    $controller = Invoke-RestMethod -Uri "$controllerBase/health" -Method GET
+    Write-Host "Active SPA admissions: $($controller.activeSpaAdmissions)" -ForegroundColor Yellow
+    Write-Host "Active issued grants: $($controller.activeIssuedGrants)" -ForegroundColor Yellow
+}
+
+Write-Host "`nSDP Demo Walkthrough" -ForegroundColor Green
+Write-Host "This script is presentation-friendly and pauses between each scenario." -ForegroundColor Green
+
+Show-Step "Step 0: Start Clean" "We reset the stack, remove old SDP audit/state files, and start from a clean baseline."
+Pause-Demo
+powershell -ExecutionPolicy Bypass -File .\generate-demo-certs.ps1 | Out-Null
 docker compose -f $composeFile down | Out-Null
-docker compose -f $composeFile up -d
-
-Write-Host "[2/13] Waiting for services..." -ForegroundColor Cyan
+Reset-DemoArtifacts
+docker compose -f $composeFile up -d | Out-Null
 Wait-Http200 "$controllerBase/health" 240
 Wait-Http200 "$gatewayBase/health" 240 -UseMtls
 Wait-Http200 $internalGatewayHealth 240 -UseMtls
-Write-Host "Services are up." -ForegroundColor Green
+Write-Host "Stack is ready." -ForegroundColor Green
+Show-GrantState
+Pause-Demo
 
-Write-Host "[3/13] Dark service check: no mTLS certificate should be rejected at TLS..." -ForegroundColor Cyan
+Show-Step "Step 1: No mTLS Certificate" "Without a client certificate, the connection is rejected before the protected SDP flow can continue."
 $noMtls = Get-NoMtlsCurlCode -Url "$gatewayBase/api/health"
-if ($noMtls.exitCode -eq 0 -and $noMtls.httpCode -ne "000") {
-    throw "Expected TLS rejection without client cert, got curl exit $($noMtls.exitCode) and HTTP $($noMtls.httpCode)"
-}
-Write-Host "PASS: request without mTLS certificate was rejected (curl=$($noMtls.exitCode), http=$($noMtls.httpCode))." -ForegroundColor Green
+Write-Host "Result: curl exit=$($noMtls.exitCode), http=$($noMtls.httpCode)" -ForegroundColor Green
+Pause-Demo
 
-Write-Host "[4/13] Dark service check: protected endpoint without SPA admission should be denied..." -ForegroundColor Cyan
+Show-Step "Step 2: mTLS But No SPA" "The device has a certificate, but it never performed an SPA knock, so the gateway denies the request."
 $codeNoSpa = Get-HttpCode -Url "$gatewayBase/api/login" -Method "POST" -Body "{}" -Headers @{ "Content-Type" = "application/json" } -UseMtls
-if ($codeNoSpa -ne 403) {
-    throw "Expected 403 before SPA admission, got $codeNoSpa"
-}
-Write-Host "PASS: mTLS client without SPA admission denied ($codeNoSpa)." -ForegroundColor Green
+Write-Host "HTTP result: $codeNoSpa" -ForegroundColor Green
+Show-RecentAudit
+Pause-Demo
 
-Write-Host "[5/13] Sending SPA knock..." -ForegroundColor Cyan
+Show-Step "Step 3: Perform SPA Knock" "Now the trusted client sends the SPA packet and the access controller creates a temporary admission."
 node agents/sdp-client/spa-knock.js --host=$spaHost --port=$spaPort --client-id=$clientId --spa-secret=$spaSecret
+Show-RecentAudit
+Show-GrantState
+Pause-Demo
 
-Write-Host "[6/13] Login + MFA over mTLS as admin..." -ForegroundColor Cyan
-$token = Login-WithMfa -Email $adminEmail -Password $adminPass -MfaSecret $adminMfaSecret -ClientIdHeader $clientId
-if (-not $token) { throw "No token returned after auth." }
-Write-Host "PASS: authenticated and received token." -ForegroundColor Green
+Show-Step "Step 4: Login As Admin" "Once the device is admitted, the user completes identity authentication and MFA."
+$adminToken = Login-WithMfa -Email $adminEmail -Password $adminPass -MfaSecret $adminMfaSecret
+Write-Host "Admin token received." -ForegroundColor Green
+Pause-Demo
 
-Write-Host "[7/13] Dark service check: authenticated request without grant should be denied..." -ForegroundColor Cyan
+Show-Step "Step 5: No Service Grant Yet" "The device is admitted and the user is authenticated, but backend access is still denied until a service grant is issued."
 $headersNoGrant = @{
-    Authorization = "Bearer $token"
+    Authorization = "Bearer $adminToken"
     "x-sdp-client-id" = $clientId
 }
 $codeNoGrant = Get-HttpCode -Url "$gatewayBase/api/patients" -Headers $headersNoGrant -UseMtls
-if ($codeNoGrant -ne 403) {
-    throw "Expected 403 without service grant, got $codeNoGrant"
-}
-Write-Host "PASS: authenticated request without grant denied ($codeNoGrant)." -ForegroundColor Green
+Write-Host "HTTP result: $codeNoGrant" -ForegroundColor Green
+Show-RecentAudit
+Pause-Demo
 
-Write-Host "[8/13] Dark service check: wrong role should be denied a backend grant..." -ForegroundColor Cyan
-$accountantToken = Login-WithMfa -Email $accountantEmail -Password $accountantPass -MfaSecret $accountantMfaSecret -ClientIdHeader $clientId
-if (-not $accountantToken) { throw "No accountant token returned after auth." }
+Show-Step "Step 6: Wrong Role Is Denied" "We keep the same trusted workstation, but log in as an accountant and ask for an admin-only path. Identity-aware policy denies the grant."
+$accountantToken = Login-WithMfa -Email $accountantEmail -Password $accountantPass -MfaSecret $accountantMfaSecret
 $accountantGrantDenied = Test-GrantDenied403 -UserToken $accountantToken -RequestedPath "/api/audit"
-if (-not $accountantGrantDenied) {
-    throw "Expected accountant grant request to be denied with HTTP 403, but a grant was issued."
-}
-Write-Host "PASS: wrong-role grant request denied (HTTP 403)." -ForegroundColor Green
+Write-Host "Wrong-role grant denied: $accountantGrantDenied" -ForegroundColor Green
+Show-RecentAudit
+Pause-Demo
 
-Write-Host "[9/13] Request backend service grant from SDP access controller..." -ForegroundColor Cyan
-$grantResp = Invoke-GrantRequest -UserToken $token -RequestedPath "/api/patients"
-if (-not $grantResp.ok -or -not $grantResp.grantToken) {
-    throw "Expected grant token from access controller."
-}
-Write-Host "PASS: service grant issued for $($grantResp.service.serviceId)." -ForegroundColor Green
+Show-Step "Step 7: Issue Valid Grant" "Now the admin requests a backend grant for `/api/patients`. The access controller checks client credentials, SPA admission, and policy before issuing it."
+$grantResp = Invoke-GrantRequest -UserToken $adminToken -RequestedPath "/api/patients"
+Write-Host "Grant issued for service: $($grantResp.service.serviceId)" -ForegroundColor Green
+Write-Host "Grant expires at: $($grantResp.expiresAt)" -ForegroundColor Green
+Show-RecentAudit
+Show-GrantState
+Pause-Demo
 
-Write-Host "[10/13] SDP check: valid SPA + mTLS + grant + role should succeed..." -ForegroundColor Cyan
-$headers = @{
-    Authorization = "Bearer $token"
+Show-Step "Step 8: Allowed Request" "With valid SPA, mTLS, user auth, and service grant, the protected backend request is allowed."
+$headersWithGrant = @{
+    Authorization = "Bearer $adminToken"
     "x-sdp-grant" = "$($grantResp.grantToken)"
     "x-sdp-client-id" = $clientId
 }
-$codeWithGrant = 0
-$startGrantCheck = Get-Date
-while (((Get-Date) - $startGrantCheck).TotalSeconds -lt 90) {
-    $codeWithGrant = Get-HttpCode -Url "$gatewayBase/api/patients" -Headers $headers -UseMtls
-    if ($codeWithGrant -eq 200) { break }
-    Start-Sleep -Seconds 2
-}
-if ($codeWithGrant -ne 200) {
-    throw "Expected 200 for authenticated /api/patients with grant, got $codeWithGrant"
-}
-Write-Host "PASS: authenticated request with grant allowed ($codeWithGrant)." -ForegroundColor Green
+$codeWithGrant = Get-HttpCode -Url "$gatewayBase/api/patients" -Headers $headersWithGrant -UseMtls
+Write-Host "HTTP result: $codeWithGrant" -ForegroundColor Green
+Show-RecentAudit
+Pause-Demo
 
-Write-Host "[11/13] Simulating quarantine response: revoke active SDP access for the workstation..." -ForegroundColor Cyan
+Show-Step "Step 9: Quarantine / Revocation" "We simulate a response-controller alert. It revokes IAM access and now also revokes live SDP admission and grants."
 $alertBody = @{
     severity = "HIGH"
     event = "ML_RULE_CORRELATED"
@@ -359,36 +423,18 @@ $alertBody = @{
         userEmail = $adminEmail
         userRole = "admin"
         sdpClientId = $clientId
-        detection_type = "verify-sdp"
+        detection_type = "demo-walkthrough"
     }
 } | ConvertTo-Json -Compress -Depth 5
 $alertResp = Invoke-RestMethod -Uri "http://127.0.0.1:4100/alert" -Method POST -ContentType "application/json" -Body $alertBody
-if (-not $alertResp.ok) {
-    throw "Expected response-controller to accept quarantine simulation."
-}
-$codeAfterRevoke = Get-HttpCode -Url "$gatewayBase/api/patients" -Headers $headers -UseMtls
-if ($codeAfterRevoke -ne 403) {
-    throw "Expected 403 after SDP revocation, got $codeAfterRevoke"
-}
-Write-Host "PASS: quarantine-driven SDP revocation blocked the old session ($codeAfterRevoke)." -ForegroundColor Green
+Write-Host "Response controller accepted alert: $($alertResp.ok)" -ForegroundColor Green
+$codeAfterRevoke = Get-HttpCode -Url "$gatewayBase/api/patients" -Headers $headersWithGrant -UseMtls
+Write-Host "Old grant after revocation returns HTTP: $codeAfterRevoke" -ForegroundColor Green
+Show-RecentAudit -Limit 8
+Show-GrantState
+Pause-Demo "Demo complete. Press Enter to show final reminders"
 
-Write-Host "[12/13] Verify controller and audit state..." -ForegroundColor Cyan
-$gw = Invoke-CurlJson -Url "$gatewayBase/health" -UseMtls
-$controller = Invoke-RestMethod -Uri "$controllerBase/health" -Method GET
-$telemetry = Invoke-RestMethod -Uri "http://127.0.0.1:9090/telemetry" -Method GET
-$isolations = Invoke-RestMethod -Uri "http://127.0.0.1:4100/isolations" -Method GET
-$audit = Invoke-RestMethod -Uri "$controllerBase/audit/recent?limit=12" -Method GET -Headers @{ "x-registration-token" = $registrationToken }
-Write-Host "Gateway TLS enabled: $($gw.tls)" -ForegroundColor Yellow
-Write-Host "Registered gateways: $($controller.registeredGateways)" -ForegroundColor Yellow
-Write-Host "Registered services: $($controller.registeredServices)" -ForegroundColor Yellow
-Write-Host "Active SPA admissions: $($controller.activeSpaAdmissions)" -ForegroundColor Yellow
-Write-Host "Active issued grants: $($controller.activeIssuedGrants)" -ForegroundColor Yellow
-Write-Host "Recent SDP audit events: $($audit.events.Count)" -ForegroundColor Yellow
-Write-Host "Telemetry entries: $($telemetry.recentTelemetry.Count)" -ForegroundColor Yellow
-Write-Host "Isolation actions: $($isolations.Count)" -ForegroundColor Yellow
-
-Write-Host "[13/13] Container status..." -ForegroundColor Cyan
-docker compose -f $composeFile ps
-
-Write-Host "Verification complete." -ForegroundColor Green
-Write-Host "To stop: docker compose -f $composeFile down" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Demo finished." -ForegroundColor Green
+Write-Host "Audit log file: $auditLogFile" -ForegroundColor Yellow
+Write-Host "To stop the stack: docker compose -f $composeFile down" -ForegroundColor Yellow

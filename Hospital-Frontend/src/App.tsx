@@ -135,7 +135,12 @@ const App = () => {
       setAuthStage('mfa')
     } else {
       // persist tokens and continue
-      setTokens({ token: res.token, refreshToken: res.refreshToken })
+      setTokens({
+        token: res.token,
+        refreshToken: res.refreshToken,
+        sdpGrantToken: res.sdpGrantToken,
+        sdpGrantExpiresAt: res.sdpGrantExpiresAt
+      })
       setCurrentUser(res.user)
       setAuthStage('authenticated')
     }
@@ -149,7 +154,12 @@ const App = () => {
       setError(res.error || 'MFA verification failed')
       return
     }
-    setTokens({ token: res.token, refreshToken: res.refreshToken })
+    setTokens({
+      token: res.token,
+      refreshToken: res.refreshToken,
+      sdpGrantToken: res.sdpGrantToken,
+      sdpGrantExpiresAt: res.sdpGrantExpiresAt
+    })
     setCurrentUser(res.user)
     setAuthStage('authenticated')
   }

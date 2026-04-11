@@ -9,7 +9,7 @@ const POLICY_FILE = process.env.SDP_POLICY_FILE || path.join(__dirname, 'policy.
 const DEFAULT_POLICY = {
   version: 'builtin-default',
   adminBypass: true,
-  defaultDecision: 'allow',
+  defaultDecision: 'deny',
   publicPaths: [
     '/api/login',
     '/api/mfa',
@@ -25,10 +25,24 @@ const DEFAULT_POLICY = {
   pathRules: [
     { prefix: '/api/monitoring', requiredPermission: 'canViewReports', allowedRoles: ['admin'] },
     { prefix: '/api/admin', requiredPermission: 'canManageUsers', allowedRoles: ['admin'] },
+    { prefix: '/api/patients', requiredPermission: 'canViewPatients', allowedRoles: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'accountant'] },
+    { prefix: '/api/appointments', requiredPermission: 'canViewAppointments', allowedRoles: ['admin', 'doctor', 'nurse', 'receptionist'] },
+    { prefix: '/api/vitals', requiredPermission: 'canViewRecords', allowedRoles: ['admin', 'doctor', 'nurse'] },
+    { prefix: '/api/prescriptions', requiredPermission: 'canViewRecords', allowedRoles: ['admin', 'doctor', 'nurse', 'pharmacist'] },
     { prefix: '/api/lab', requiredPermission: 'canViewLabs', allowedRoles: ['admin', 'doctor', 'lab_technician'] },
     { prefix: '/api/pharmacy', requiredPermission: 'canViewPharmacy', allowedRoles: ['admin', 'doctor', 'pharmacist', 'nurse'] },
     { prefix: '/api/billing', requiredPermission: 'canViewBilling', allowedRoles: ['admin', 'accountant'] },
-    { prefix: '/api/files', requiredPermission: 'canViewPatientFiles', allowedRoles: ['admin', 'doctor', 'nurse'] }
+    { prefix: '/api/files', requiredPermission: 'canViewPatientFiles', allowedRoles: ['admin', 'doctor', 'nurse', 'lab_technician', 'patient'] },
+    { prefix: '/api/audit', requiredPermission: 'canViewReports', allowedRoles: ['admin'] },
+    { prefix: '/api/dashboard', requiredPermission: 'canViewReports', allowedRoles: ['admin', 'doctor'] },
+    { prefix: '/api/doctor', requiredPermission: 'canViewRecords', allowedRoles: ['admin', 'doctor'] },
+    { prefix: '/api/receptionist', requiredPermission: 'canViewAppointments', allowedRoles: ['admin', 'receptionist'] },
+    { prefix: '/api/nurse', requiredPermission: 'canViewRecords', allowedRoles: ['admin', 'nurse'] },
+    { prefix: '/api/accountant', requiredPermission: 'canViewBilling', allowedRoles: ['admin', 'accountant'] },
+    { prefix: '/api/notifications', requiredPermission: null, allowedRoles: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'accountant', 'patient'] },
+    { prefix: '/api/encryption', requiredPermission: null, allowedRoles: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'accountant', 'patient'] },
+    { prefix: '/api/doctors', requiredPermission: 'canViewAppointments', allowedRoles: ['admin', 'doctor', 'receptionist'] },
+    { prefix: '/api/users', requiredPermission: 'canManageUsers', allowedRoles: ['admin'] }
   ]
 };
 
@@ -46,7 +60,7 @@ function normalizePolicy(raw) {
   const merged = {
     version: typeof policy.version === 'string' ? policy.version : DEFAULT_POLICY.version,
     adminBypass: typeof policy.adminBypass === 'boolean' ? policy.adminBypass : DEFAULT_POLICY.adminBypass,
-    defaultDecision: policy.defaultDecision === 'deny' ? 'deny' : 'allow',
+    defaultDecision: policy.defaultDecision === 'allow' ? 'allow' : 'deny',
     publicPaths: Array.isArray(policy.publicPaths) ? policy.publicPaths.filter((v) => typeof v === 'string') : DEFAULT_POLICY.publicPaths,
     pathRules: Array.isArray(policy.pathRules) ? policy.pathRules : DEFAULT_POLICY.pathRules
   };

@@ -17,6 +17,11 @@ const IAM_CONFIG = {
   HOST: process.env.IAM_HOST || '172.21.0.40',
   PORT: process.env.IAM_PORT || 4000
 };
+const SDP_CONFIG = {
+  HOST: process.env.SDP_ACCESS_CONTROLLER_HOST || 'spa-controller',
+  PORT: parseInt(process.env.SDP_ACCESS_CONTROLLER_PORT || '7001', 10),
+  REGISTRATION_TOKEN: process.env.SDP_REGISTRATION_TOKEN || 'sdp_register_demo_token'
+};
 
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
@@ -122,6 +127,62 @@ function blockIPAddress(ipAddress, reason) {
   });
 }
 
+function revokeSdpAccess(clientId, userEmail, reason) {
+  const normalizedClientId = typeof clientId === 'string' && clientId.trim() && clientId.trim().toLowerCase() !== 'unknown'
+    ? clientId.trim()
+    : null;
+  const normalizedUserEmail = typeof userEmail === 'string' && userEmail.trim() && userEmail.trim().toLowerCase() !== 'unknown'
+    ? userEmail.trim()
+    : null;
+
+  if (!normalizedClientId && !normalizedUserEmail) {
+    return Promise.resolve({ ok: true, skipped: true, reason: 'missing_sdp_identity' });
+  }
+
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({ clientId: normalizedClientId, userEmail: normalizedUserEmail, reason });
+    const options = {
+      hostname: SDP_CONFIG.HOST,
+      port: SDP_CONFIG.PORT,
+      path: '/admin/revoke',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'x-registration-token': SDP_CONFIG.REGISTRATION_TOKEN
+      },
+      timeout: 5000
+    };
+
+    const req = http.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(body || '{}');
+          writeLog(ALERT_LOG, `SDP_REVOKE: clientId=${normalizedClientId || 'N/A'} email=${normalizedUserEmail || 'N/A'} result=${JSON.stringify(response)}`);
+          resolve(response);
+        } catch (e) {
+          resolve({ ok: false, error: 'Parse error' });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      writeLog(ALERT_LOG, `SDP_REVOKE_FAILED: ${err.message}`);
+      resolve({ ok: false, error: err.message });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, error: 'timeout' });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 app.use(bodyParser.json());
 
 // Basic alert receiver
@@ -135,6 +196,7 @@ app.post('/alert', async (req, res) => {
     const details = alert.details || {};
     const userEmail = details.userEmail || details.email || null;
     const userRole = details.userRole || null;
+    const sdpClientId = details.clientId || details.sdpClientId || null;
 
     // ===== ROLE-BASED ACCESS VIOLATION HANDLING =====
     // These are HIGH severity — revoke the user's tokens immediately
@@ -146,6 +208,8 @@ app.post('/alert', async (req, res) => {
       console.log(`[Phase2] 🔐 Revoking tokens for violating user: ${userEmail}`);
       const revokeResult = await revokeUserTokens(userEmail, null, `ROLE_ACCESS_VIOLATION: ${userRole} -> ${details.path}`);
       iamActions.push({ type: 'revoke_user', email: userEmail, result: revokeResult });
+      const sdpRevokeResult = await revokeSdpAccess(sdpClientId, userEmail, `ROLE_ACCESS_VIOLATION:${details.path || 'unknown_path'}`);
+      iamActions.push({ type: 'revoke_sdp_access', clientId: sdpClientId, email: userEmail, result: sdpRevokeResult });
 
       // Record the action
       let isolations = [];
@@ -224,6 +288,11 @@ app.post('/alert', async (req, res) => {
         action.iamActions.push({ type: 'revoke_user', email: userEmail, result: revokeResult });
       }
 
+      if (sdpClientId || userEmail) {
+        const sdpRevokeResult = await revokeSdpAccess(sdpClientId, userEmail, alert.event);
+        action.iamActions.push({ type: 'revoke_sdp_access', clientId: sdpClientId, email: userEmail, result: sdpRevokeResult });
+      }
+
       // If alert contains IP address (brute force), block the IP
       if (details.ipAddress) {
         console.log(`[Phase2] 🚫 Blocking IP: ${details.ipAddress}`);
@@ -252,6 +321,10 @@ app.post('/alert', async (req, res) => {
         console.log(`[Phase2] 🔐 Revoking tokens for HIGH alert user: ${userEmail}`);
         const revokeResult = await revokeUserTokens(userEmail, null, alert.event);
         iamActions.push({ type: 'revoke_user', email: userEmail, result: revokeResult });
+      }
+      if (sdpClientId || userEmail) {
+        const sdpRevokeResult = await revokeSdpAccess(sdpClientId, userEmail, alert.event);
+        iamActions.push({ type: 'revoke_sdp_access', clientId: sdpClientId, email: userEmail, result: sdpRevokeResult });
       }
       if (details.ipAddress) {
         console.log(`[Phase2] 🚫 Blocking IP for HIGH alert: ${details.ipAddress}`);

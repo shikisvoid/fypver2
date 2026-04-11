@@ -2,17 +2,23 @@ const API_BASE = ''
 
 const ACCESS_KEY = 'hp_access_token'
 const REFRESH_KEY = 'hp_refresh_token'
+const SDP_GRANT_KEY = 'hp_sdp_grant_token'
+const SDP_GRANT_EXPIRES_KEY = 'hp_sdp_grant_expires_at'
 
-type TokenPair = { token?: string; refreshToken?: string }
+type TokenPair = { token?: string; refreshToken?: string; sdpGrantToken?: string; sdpGrantExpiresAt?: string }
 
-export function setTokens({ token, refreshToken }: TokenPair) {
+export function setTokens({ token, refreshToken, sdpGrantToken, sdpGrantExpiresAt }: TokenPair) {
   if (token) localStorage.setItem(ACCESS_KEY, token)
   if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken)
+  if (sdpGrantToken) localStorage.setItem(SDP_GRANT_KEY, sdpGrantToken)
+  if (sdpGrantExpiresAt) localStorage.setItem(SDP_GRANT_EXPIRES_KEY, sdpGrantExpiresAt)
 }
 
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY)
   localStorage.removeItem(REFRESH_KEY)
+  localStorage.removeItem(SDP_GRANT_KEY)
+  localStorage.removeItem(SDP_GRANT_EXPIRES_KEY)
 }
 
 export function getAccessToken(): string | null {
@@ -23,10 +29,41 @@ export function getRefreshToken(): string | null {
   return localStorage.getItem(REFRESH_KEY)
 }
 
+export function getSdpGrantToken(): string | null {
+  const token = localStorage.getItem(SDP_GRANT_KEY)
+  const expiresAt = localStorage.getItem(SDP_GRANT_EXPIRES_KEY)
+  if (!token || !expiresAt) return token
+  if (Date.now() > Date.parse(expiresAt) - 30000) return null
+  return token
+}
+
+async function requestSdpGrant(token: string, requestedPath = '/api/patients', method = 'GET') {
+  const res = await fetch(`${API_BASE}/sdp/connect`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ requestedPath, method })
+  })
+  const data = await res.json()
+  if (!res.ok || !data.ok || !data.grantToken) {
+    throw new Error(data.error || 'SDP grant request failed')
+  }
+  return { sdpGrantToken: data.grantToken, sdpGrantExpiresAt: data.expiresAt }
+}
+
 async function fetchWithAuth(input: string, init: RequestInit = {}, retry = true): Promise<Response> {
   const token = getAccessToken()
+  let sdpGrant = getSdpGrantToken()
+  if (token && !sdpGrant) {
+    const grant = await requestSdpGrant(token, input)
+    setTokens({ sdpGrantToken: grant.sdpGrantToken, sdpGrantExpiresAt: grant.sdpGrantExpiresAt })
+    sdpGrant = grant.sdpGrantToken
+  }
   init.headers = init.headers || {}
   if (token && typeof init.headers !== 'string') (init.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
+  if (sdpGrant && typeof init.headers !== 'string') (init.headers as Record<string, string>)['x-sdp-grant'] = sdpGrant
   try {
     const res = await fetch(`${API_BASE}${input}`, init)
     if (res.status === 401 && retry) {
@@ -40,8 +77,10 @@ async function fetchWithAuth(input: string, init: RequestInit = {}, retry = true
       if (rres.ok) {
         const rdata = await rres.json()
         if (rdata.success && rdata.token) {
-          setTokens({ token: rdata.token, refreshToken: rdata.refreshToken })
+          const grant = await requestSdpGrant(rdata.token, input)
+          setTokens({ token: rdata.token, refreshToken: rdata.refreshToken, ...grant })
           ;(init.headers as Record<string, string>)['Authorization'] = `Bearer ${rdata.token}`
+          ;(init.headers as Record<string, string>)['x-sdp-grant'] = grant.sdpGrantToken
           return fetch(`${API_BASE}${input}`, init)
         }
       }
@@ -64,10 +103,15 @@ export async function login(email: string, password: string) {
     console.log('Login response status:', res.status)
     const data = await res.json()
     console.log('Login response:', data)
+    if (data.success && data.token) {
+      const grant = await requestSdpGrant(data.token)
+      data.sdpGrantToken = grant.sdpGrantToken
+      data.sdpGrantExpiresAt = grant.sdpGrantExpiresAt
+    }
     return data
   } catch (err) {
     console.error('Login error:', err)
-    return { success: false, error: 'Network error' }
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
   }
 }
 
@@ -83,10 +127,15 @@ export async function verifyMfa(email: string, code: string) {
     console.log('MFA verify response status:', res.status)
     const data = await res.json()
     console.log('MFA verify response:', data)
+    if (data.success && data.token) {
+      const grant = await requestSdpGrant(data.token)
+      data.sdpGrantToken = grant.sdpGrantToken
+      data.sdpGrantExpiresAt = grant.sdpGrantExpiresAt
+    }
     return data
   } catch (err) {
     console.error('MFA verify error:', err)
-    return { success: false, error: 'Network error' }
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
   }
 }
 
@@ -229,4 +278,3 @@ export async function updateLabFees(billingId: string, labFees: number) {
   })
   return res.json()
 }
-

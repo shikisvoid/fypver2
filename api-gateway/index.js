@@ -7,12 +7,12 @@ const https = require('https');
 const jwt = require('jsonwebtoken');
 
 const PORT = parseInt(process.env.PORT || '8443', 10);
-const JWT_SECRET = process.env.JWT_SECRET || 'sdp_phase2_shared_secret_change_me';
+const JWT_SECRET = readSecret('JWT_SECRET', 'sdp_phase2_shared_secret_change_me');
 const IAM_URL = process.env.IAM_URL || 'http://iam:4000';
 const BACKEND_URL = process.env.BACKEND_URL || 'https://backend-internal-gateway:3443';
 const SDP_CONTROLLER_URL = process.env.SDP_CONTROLLER_URL || 'http://sdp-controller:7000';
 const SDP_ACCESS_CONTROLLER_URL = process.env.SDP_ACCESS_CONTROLLER_URL || 'http://spa-controller:7001';
-const SDP_REGISTRATION_TOKEN = process.env.SDP_REGISTRATION_TOKEN || 'sdp_register_demo_token';
+const SDP_REGISTRATION_TOKEN = readSecret('SDP_REGISTRATION_TOKEN', 'sdp_register_demo_token');
 const GATEWAY_ID = process.env.GATEWAY_ID || 'external-api-gateway';
 const GATEWAY_PUBLIC_URL = process.env.GATEWAY_PUBLIC_URL || 'https://api-gateway:8443';
 const SDP_ENFORCEMENT = process.env.SDP_ENFORCEMENT !== 'false';
@@ -22,6 +22,15 @@ const TLS_SERVER_KEY = process.env.TLS_SERVER_KEY || '/certs/external-gateway/ex
 const TLS_CA_CERT = process.env.TLS_CA_CERT || '/certs/ca/ca.crt';
 const INTERNAL_TLS_CLIENT_CERT = process.env.INTERNAL_TLS_CLIENT_CERT || '/certs/external-gateway/external-gateway-client.crt';
 const INTERNAL_TLS_CLIENT_KEY = process.env.INTERNAL_TLS_CLIENT_KEY || '/certs/external-gateway/external-gateway-client.key';
+
+function readSecret(envName, demoFallback) {
+  const value = process.env[envName];
+  if (typeof value === 'string' && value.length > 0) return value;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`${envName} is required in production`);
+  }
+  return demoFallback;
+}
 
 const PUBLIC_PATHS = [
   '/api/login',
@@ -173,10 +182,11 @@ async function authorizeServiceGrant({ pathname, method, grantToken, clientCertC
   return result.body;
 }
 
-async function authorizeSpaClient({ clientId, clientCertCn }) {
+async function authorizeSpaClient({ clientId, clientCertCn, sourceIp }) {
   const result = await postJson(`${SDP_ACCESS_CONTROLLER_URL}/authorize/client`, {
     clientId,
-    clientCertCn
+    clientCertCn,
+    sourceIp
   });
 
   if (result.status >= 400) {
@@ -254,7 +264,7 @@ app.use(cors({
   origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-sdp-grant']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-sdp-grant', 'x-sdp-client-id']
 }));
 
 app.get('/health', (req, res) => {
@@ -287,7 +297,11 @@ app.use('/api', async (req, res, next) => {
     }
 
     try {
-      const spaDecision = await authorizeSpaClient({ clientId, clientCertCn });
+      const spaDecision = await authorizeSpaClient({
+        clientId,
+        clientCertCn,
+        sourceIp: req.ip || req.connection.remoteAddress || ''
+      });
       if (!spaDecision.allow) {
         return res.status(403).json({ success: false, error: `SDP denied: ${spaDecision.reason || 'spa_denied'}` });
       }
@@ -391,7 +405,7 @@ const tlsOptions = {
   key: fs.readFileSync(TLS_SERVER_KEY),
   ca: fs.readFileSync(TLS_CA_CERT),
   requestCert: true,
-  rejectUnauthorized: false
+  rejectUnauthorized: true
 };
 
 https.createServer(tlsOptions, app).listen(PORT, '0.0.0.0', () => {
