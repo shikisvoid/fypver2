@@ -21,6 +21,7 @@ import Card from './Card'
 import Table from './Table'
 import Button from './Button'
 import Modal from './Modal'
+import { buildSdpHeaders, fetchWithAuth } from '../auth'
 
 interface LabTest {
   id: string
@@ -76,9 +77,6 @@ const LabTechnician: React.FC<{ user?: any }> = ({ user }) => {
   const [showViewResult, setShowViewResult] = useState(false)
   const [selectedResult, setSelectedResult] = useState<any>(null)
 
-  const API_URL = 'http://localhost:3000'
-  const token = localStorage.getItem('token')
-
   // Fetch dashboard stats
   useEffect(() => {
     if (activeTab === 'dashboard') {
@@ -89,9 +87,7 @@ const LabTechnician: React.FC<{ user?: any }> = ({ user }) => {
   const fetchDashboardStats = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`${API_URL}/api/lab/dashboard`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const response = await fetchWithAuth('/api/lab/dashboard', { method: 'GET' })
       const data = await response.json()
       if (data.success) {
         setDashboardStats(data.dashboard)
@@ -114,10 +110,7 @@ const LabTechnician: React.FC<{ user?: any }> = ({ user }) => {
     try {
       setLoading(true)
       const status = testFilter === 'all' ? '' : `&status=${testFilter}`
-      const response = await fetch(
-        `${API_URL}/api/lab/tests?${status}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
+      const response = await fetchWithAuth(`/api/lab/tests?${status}`, { method: 'GET' })
       const data = await response.json()
       if (data.success) {
         setTestOrders(data.tests)
@@ -157,22 +150,18 @@ const LabTechnician: React.FC<{ user?: any }> = ({ user }) => {
 
     try {
       setLoading(true)
-      const response = await fetch(
-        `${API_URL}/api/lab/samples`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            testId: selectedTestForSample.id,
-            sampleType: sampleForm.sampleType,
-            barcode: sampleForm.sampleBarcode,
-            notes: sampleForm.collectionNotes
-          })
-        }
-      )
+      const response = await fetchWithAuth('/api/lab/samples', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          testId: selectedTestForSample.id,
+          sampleType: sampleForm.sampleType,
+          barcode: sampleForm.sampleBarcode,
+          notes: sampleForm.collectionNotes
+        })
+      })
       const data = await response.json()
 
       if (data.success) {
@@ -238,8 +227,11 @@ const LabTechnician: React.FC<{ user?: any }> = ({ user }) => {
         setUploadProgress(0)
       })
 
-      xhr.open('POST', `${API_URL}/api/lab/results`)
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      const sdpHeaders = await buildSdpHeaders('/api/lab/results', 'POST')
+      xhr.open('POST', '/api/lab/results')
+      Object.entries(sdpHeaders).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value)
+      })
       xhr.send(formData)
     } catch (err: any) {
       setError('Failed to upload results')
@@ -258,10 +250,7 @@ const LabTechnician: React.FC<{ user?: any }> = ({ user }) => {
   const fetchCompletedTests = async () => {
     try {
       setLoading(true)
-      const response = await fetch(
-        `${API_URL}/api/lab/tests?status=completed`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
+      const response = await fetchWithAuth('/api/lab/tests?status=completed', { method: 'GET' })
       const data = await response.json()
       if (data.success) {
         setCompletedTests(data.tests)
@@ -277,10 +266,7 @@ const LabTechnician: React.FC<{ user?: any }> = ({ user }) => {
   const handleViewResult = async (test: any) => {
     try {
       setLoading(true)
-      const response = await fetch(
-        `${API_URL}/api/lab/results/${test.id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
+      const response = await fetchWithAuth(`/api/lab/results/${test.id}`, { method: 'GET' })
       const data = await response.json()
       if (data.success) {
         setSelectedResult(data.result)

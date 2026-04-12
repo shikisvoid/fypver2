@@ -31,6 +31,7 @@ const state = {
   configMtimeMs: 0,
   gateways: new Map(),
   services: new Map(),
+  isolatedSegments: new Map(),
   spaAdmissions: new Map(),
   issuedGrants: new Map(),
   usedSpaNonces: new Map()
@@ -98,6 +99,7 @@ function savePersistentState() {
     updatedAt: new Date().toISOString(),
     gateways: mapToSortedArray(state.gateways),
     services: mapToSortedArray(state.services),
+    isolatedSegments: mapToSortedArray(state.isolatedSegments),
     spaAdmissions: mapToSortedArray(state.spaAdmissions),
     issuedGrants: mapToSortedArray(state.issuedGrants),
     usedSpaNonces: Array.from(state.usedSpaNonces.entries()).map(([nonceKey, expiresAtMs]) => ({ nonceKey, expiresAtMs }))
@@ -147,6 +149,11 @@ function loadPersistentState() {
       (Array.isArray(parsed.services) ? parsed.services : [])
         .filter((service) => service && typeof service.serviceId === 'string')
         .map((service) => [service.serviceId, service])
+    );
+    state.isolatedSegments = new Map(
+      (Array.isArray(parsed.isolatedSegments) ? parsed.isolatedSegments : [])
+        .filter((segment) => segment && typeof segment.segmentId === 'string')
+        .map((segment) => [segment.segmentId, segment])
     );
     state.spaAdmissions = new Map(
       (Array.isArray(parsed.spaAdmissions) ? parsed.spaAdmissions : [])
@@ -437,6 +444,7 @@ function upsertService(body) {
   const service = {
     serviceId: body.serviceId,
     name: typeof body.name === 'string' ? body.name : body.serviceId,
+    segmentId: typeof body.segmentId === 'string' && body.segmentId.trim().length > 0 ? body.segmentId.trim() : body.serviceId,
     entryGatewayId: typeof body.entryGatewayId === 'string' ? body.entryGatewayId : null,
     internalGatewayId: typeof body.internalGatewayId === 'string' ? body.internalGatewayId : null,
     originUrl: typeof body.originUrl === 'string' ? body.originUrl : null,
@@ -450,7 +458,83 @@ function upsertService(body) {
   return service;
 }
 
+function getSegmentIsolation(segmentId) {
+  if (typeof segmentId !== 'string' || segmentId.length === 0) {
+    return null;
+  }
+  return state.isolatedSegments.get(segmentId) || null;
+}
+
+function isolateSegmentAccess({ segmentId, serviceId = null, reason = 'segment_isolated' }) {
+  const normalizedSegmentId = typeof segmentId === 'string' && segmentId.trim().length > 0 ? segmentId.trim() : null;
+  const normalizedServiceId = typeof serviceId === 'string' && serviceId.trim().length > 0 ? serviceId.trim() : null;
+
+  if (!normalizedSegmentId) {
+    return { skipped: true, reason: 'segmentId_required', revokedGrants: 0, affectedServices: [] };
+  }
+
+  const affectedServices = Array.from(state.services.values())
+    .filter((service) => service.segmentId === normalizedSegmentId && (!normalizedServiceId || service.serviceId === normalizedServiceId))
+    .map((service) => service.serviceId);
+
+  let revokedGrants = 0;
+  for (const grant of state.issuedGrants.values()) {
+    if (affectedServices.includes(grant.serviceId) && !grant.revokedAt) {
+      grant.revokedAt = new Date().toISOString();
+      grant.revokeReason = `segment_isolated:${normalizedSegmentId}:${reason}`;
+      revokedGrants += 1;
+    }
+  }
+
+  const isolation = {
+    segmentId: normalizedSegmentId,
+    serviceId: normalizedServiceId,
+    reason,
+    isolatedAt: new Date().toISOString(),
+    affectedServices
+  };
+
+  state.isolatedSegments.set(normalizedSegmentId, isolation);
+  persistStateQuietly();
+  appendAuditEvent('segment_isolated', isolation);
+  return { ok: true, revokedGrants, affectedServices, isolation };
+}
+
+function releaseSegmentAccess({ segmentId, reason = 'manual_release' }) {
+  const normalizedSegmentId = typeof segmentId === 'string' && segmentId.trim().length > 0 ? segmentId.trim() : null;
+  if (!normalizedSegmentId) {
+    return { skipped: true, reason: 'segmentId_required' };
+  }
+
+  const existing = state.isolatedSegments.get(normalizedSegmentId);
+  if (!existing) {
+    return { ok: true, released: false, segmentId: normalizedSegmentId };
+  }
+
+  state.isolatedSegments.delete(normalizedSegmentId);
+  persistStateQuietly();
+  appendAuditEvent('segment_released', {
+    segmentId: normalizedSegmentId,
+    reason,
+    releasedAt: new Date().toISOString(),
+    previousIsolation: existing
+  });
+  return { ok: true, released: true, segmentId: normalizedSegmentId };
+}
+
 async function authorizeUserForService(service, pathname, method, userToken) {
+  const activeIsolation = getSegmentIsolation(service.segmentId);
+  if (activeIsolation) {
+    appendAuditEvent('grant_denied', {
+      serviceId: service.serviceId,
+      pathname,
+      method,
+      segmentId: service.segmentId,
+      reason: 'segment_isolated'
+    });
+    return { allow: false, reason: 'segment_isolated' };
+  }
+
   if (!service.requiresIdentity) {
     return { allow: true, reason: 'service_public' };
   }
@@ -595,6 +679,20 @@ function authorizeGatewayGrant(grantToken, gatewayId, pathname, clientCertCn) {
     return { allow: false, reason: 'unknown_service' };
   }
 
+  const activeIsolation = getSegmentIsolation(service.segmentId);
+  if (activeIsolation) {
+    appendAuditEvent('gateway_authorization_denied', {
+      gatewayId,
+      pathname,
+      clientCertCn,
+      serviceId: payload.serviceId,
+      grantId: payload.jti,
+      segmentId: service.segmentId,
+      reason: 'segment_isolated'
+    });
+    return { allow: false, reason: 'segment_isolated' };
+  }
+
   const entryGatewayId = payload.entryGatewayId;
   const internalGatewayId = payload.internalGatewayId;
   const isGatewayAllowed = gatewayId === entryGatewayId || gatewayId === internalGatewayId;
@@ -711,6 +809,7 @@ app.get('/health', (req, res) => {
     configuredClients: state.config.clients.length,
     activeSpaAdmissions: state.spaAdmissions.size,
     activeIssuedGrants: Array.from(state.issuedGrants.values()).filter((grant) => !grant.revokedAt).length,
+    isolatedSegments: Array.from(state.isolatedSegments.values()),
     spaUdpPort: SPA_UDP_PORT,
     bindSpaToSource: BIND_SPA_TO_SOURCE,
     stateFile: STATE_FILE,
@@ -725,10 +824,12 @@ app.get('/directory', (req, res) => {
     services: Array.from(state.services.values()).map((service) => ({
       serviceId: service.serviceId,
       name: service.name,
+      segmentId: service.segmentId,
       entryGatewayId: service.entryGatewayId,
       internalGatewayId: service.internalGatewayId,
       pathPrefixes: service.pathPrefixes,
-      requiresIdentity: service.requiresIdentity
+      requiresIdentity: service.requiresIdentity,
+      isolated: Boolean(getSegmentIsolation(service.segmentId))
     }))
   });
 });
@@ -869,6 +970,35 @@ app.post('/admin/revoke', requireRegistrationToken, (req, res) => {
 
   const result = revokeAccess({ clientId, userEmail, reason });
   return res.json({ ok: true, ...result });
+});
+
+app.post('/admin/isolate-segment', requireRegistrationToken, (req, res) => {
+  const body = req.body || {};
+  const serviceId = typeof body.serviceId === 'string' && body.serviceId.length > 0 ? body.serviceId : null;
+  const segmentId = typeof body.segmentId === 'string' && body.segmentId.length > 0
+    ? body.segmentId
+    : (serviceId && state.services.get(serviceId) ? state.services.get(serviceId).segmentId : null);
+  const reason = typeof body.reason === 'string' && body.reason.length > 0 ? body.reason : 'manual_segment_isolation';
+
+  if (!segmentId) {
+    return res.status(400).json({ ok: false, error: 'segmentId_or_serviceId_required' });
+  }
+
+  const result = isolateSegmentAccess({ segmentId, serviceId, reason });
+  return res.json(result);
+});
+
+app.post('/admin/release-segment', requireRegistrationToken, (req, res) => {
+  const body = req.body || {};
+  const segmentId = typeof body.segmentId === 'string' && body.segmentId.length > 0 ? body.segmentId : null;
+  const reason = typeof body.reason === 'string' && body.reason.length > 0 ? body.reason : 'manual_segment_release';
+
+  if (!segmentId) {
+    return res.status(400).json({ ok: false, error: 'segmentId_required' });
+  }
+
+  const result = releaseSegmentAccess({ segmentId, reason });
+  return res.json(result);
 });
 
 const udpServer = dgram.createSocket('udp4');

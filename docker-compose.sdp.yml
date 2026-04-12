@@ -2,8 +2,24 @@
 # Identity-aware access is enforced by the API Gateway.
 
 networks:
-  sdp-net:
+  edge-net:
     driver: bridge
+  control-net:
+    driver: bridge
+  observe-net:
+    driver: bridge
+  backend-segment-net:
+    driver: bridge
+    internal: true
+  backend-support-net:
+    driver: bridge
+    internal: true
+  data-private:
+    driver: bridge
+    internal: true
+  security-net:
+    driver: bridge
+    internal: true
 
 services:
   db:
@@ -11,7 +27,8 @@ services:
     image: postgres:14-alpine
     container_name: hospital-db
     networks:
-      - sdp-net
+      - data-private
+      - security-net
     environment:
       POSTGRES_USER: hospital
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-F1UFDk8H36Ry2RITAvnErulW}
@@ -30,7 +47,7 @@ services:
     image: adminer:latest
     container_name: hospital-adminer
     networks:
-      - sdp-net
+      - data-private
     ports:
       - "127.0.0.1:8081:8080"
     depends_on:
@@ -44,7 +61,10 @@ services:
     working_dir: /app
     init: true
     networks:
-      - sdp-net
+      - backend-segment-net
+      - backend-support-net
+      - data-private
+      - observe-net
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       JWT_SECRET: ${JWT_SECRET:-sdp_phase2_shared_secret_change_me}
@@ -73,7 +93,8 @@ services:
     container_name: hospital-encryption
     working_dir: /app
     networks:
-      - sdp-net
+      - backend-support-net
+      - observe-net
     volumes:
       - ./Encryption:/app
       - encryption-data:/app/storage
@@ -87,7 +108,8 @@ services:
     working_dir: /app
     init: true
     networks:
-      - sdp-net
+      - control-net
+      - observe-net
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       JWT_SECRET: ${JWT_SECRET:-sdp_phase2_shared_secret_change_me}
@@ -109,7 +131,7 @@ services:
     container_name: hospital-sdp-controller
     working_dir: /app
     networks:
-      - sdp-net
+      - control-net
     ports:
       - "127.0.0.1:7000:7000"
     volumes:
@@ -122,7 +144,7 @@ services:
     container_name: hospital-spa-controller
     working_dir: /app
     networks:
-      - sdp-net
+      - control-net
     ports:
       - "127.0.0.1:7001:7001"
       - "127.0.0.1:62201:62201/udp"
@@ -148,7 +170,8 @@ services:
     working_dir: /app
     init: true
     networks:
-      - sdp-net
+      - control-net
+      - backend-segment-net
     ports:
       - "127.0.0.1:3443:3443"
     environment:
@@ -161,6 +184,7 @@ services:
       GATEWAY_URL: https://backend-internal-gateway:3443
       SERVICE_ID: hospital-backend-app
       SERVICE_NAME: Hospital Backend App
+      SERVICE_SEGMENT_ID: backend-clinical-segment
       SERVICE_PATH_PREFIXES: /api/patients,/api/appointments,/api/vitals,/api/prescriptions,/api/lab,/api/billing,/api/pharmacy,/api/files,/api/audit,/api/monitoring,/api/dashboard,/api/doctor,/api/receptionist,/api/nurse,/api/accountant,/api/notifications,/api/encryption,/api/doctors,/api/users
       TLS_SERVER_CERT: /certs/internal-gateway/internal-gateway-server.crt
       TLS_SERVER_KEY: /certs/internal-gateway/internal-gateway-server.key
@@ -180,7 +204,9 @@ services:
     working_dir: /app
     init: true
     networks:
-      - sdp-net
+      - edge-net
+      - control-net
+      - observe-net
     environment:
       PORT: 8443
       NODE_ENV: ${NODE_ENV:-development}
@@ -220,7 +246,9 @@ services:
     working_dir: /app
     init: true
     networks:
-      - sdp-net
+      - edge-net
+      - control-net
+      - observe-net
     environment:
       VITE_API_URL: http://localhost:8088
       VITE_IAM_URL: http://localhost:8088
@@ -253,7 +281,8 @@ services:
     working_dir: /app
     init: true
     networks:
-      - sdp-net
+      - control-net
+      - observe-net
     volumes:
       - ./monitoring:/app
       - monitor-logs:/logs
@@ -279,7 +308,7 @@ services:
     image: prom/prometheus:latest
     container_name: hospital-prometheus
     networks:
-      - sdp-net
+      - observe-net
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
@@ -300,7 +329,7 @@ services:
     image: grafana/grafana:latest
     container_name: hospital-grafana
     networks:
-      - sdp-net
+      - observe-net
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
@@ -322,7 +351,8 @@ services:
     working_dir: /app
     init: true
     networks:
-      - sdp-net
+      - control-net
+      - observe-net
     volumes:
       - ./response/controller:/app
       - monitor-logs:/logs
@@ -336,6 +366,8 @@ services:
       - SDP_ACCESS_CONTROLLER_HOST=spa-controller
       - SDP_ACCESS_CONTROLLER_PORT=7001
       - SDP_REGISTRATION_TOKEN=${SDP_REGISTRATION_TOKEN:-sdp_register_demo_token}
+      - SDP_DEFAULT_SERVICE_ID=hospital-backend-app
+      - SDP_DEFAULT_SEGMENT_ID=backend-clinical-segment
     depends_on:
       - monitor
     restart: unless-stopped
@@ -349,7 +381,8 @@ services:
     working_dir: /app
     init: true
     networks:
-      - sdp-net
+      - control-net
+      - observe-net
     volumes:
       - ./ml-engine/models:/app/models
       - ./ml-engine/data:/app/data:ro
@@ -366,7 +399,8 @@ services:
     container_name: edr-admin-workstation
     working_dir: /edr
     networks:
-      - sdp-net
+      - observe-net
+      - security-net
     volumes:
       - ./agents/real-edr:/edr
     environment:
@@ -393,7 +427,8 @@ services:
     container_name: edr-doctor-workstation
     working_dir: /edr
     networks:
-      - sdp-net
+      - observe-net
+      - security-net
     volumes:
       - ./agents/real-edr:/edr
     environment:
@@ -420,7 +455,8 @@ services:
     container_name: edr-nurse-workstation
     working_dir: /edr
     networks:
-      - sdp-net
+      - observe-net
+      - security-net
     volumes:
       - ./agents/real-edr:/edr
     environment:
@@ -447,7 +483,8 @@ services:
     container_name: edr-receptionist-workstation
     working_dir: /edr
     networks:
-      - sdp-net
+      - observe-net
+      - security-net
     volumes:
       - ./agents/real-edr:/edr
     environment:
@@ -474,7 +511,8 @@ services:
     container_name: edr-labtech-workstation
     working_dir: /edr
     networks:
-      - sdp-net
+      - observe-net
+      - security-net
     volumes:
       - ./agents/real-edr:/edr
     environment:
@@ -501,7 +539,8 @@ services:
     container_name: edr-pharmacist-workstation
     working_dir: /edr
     networks:
-      - sdp-net
+      - observe-net
+      - security-net
     volumes:
       - ./agents/real-edr:/edr
     environment:
@@ -528,7 +567,8 @@ services:
     container_name: edr-accountant-workstation
     working_dir: /edr
     networks:
-      - sdp-net
+      - observe-net
+      - security-net
     volumes:
       - ./agents/real-edr:/edr
     environment:
@@ -555,7 +595,8 @@ services:
     container_name: edr-patient-terminal
     working_dir: /edr
     networks:
-      - sdp-net
+      - observe-net
+      - security-net
     volumes:
       - ./agents/real-edr:/edr
     environment:

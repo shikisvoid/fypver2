@@ -24,10 +24,6 @@ scrape_configs:
         labels:
           service: 'backend-api'
           network: 'sdp'
-      - targets: ['hospital-db:5432']
-        labels:
-          service: 'database'
-          network: 'sdp'
       - targets: ['hospital-encryption:3001']
         labels:
           service: 'encryption'
@@ -51,5 +47,4 @@ scrape_configs:
       - targets: ['localhost:9091']
         labels:
           service: 'prometheus'
-
 

@@ -53,17 +53,27 @@ async function requestSdpGrant(token: string, requestedPath = '/api/patients', m
   return { sdpGrantToken: data.grantToken, sdpGrantExpiresAt: data.expiresAt }
 }
 
-async function fetchWithAuth(input: string, init: RequestInit = {}, retry = true): Promise<Response> {
+export async function buildSdpHeaders(input: string, method = 'GET'): Promise<Record<string, string>> {
   const token = getAccessToken()
   let sdpGrant = getSdpGrantToken()
   if (token && !sdpGrant) {
-    const grant = await requestSdpGrant(token, input)
+    const grant = await requestSdpGrant(token, input, method)
     setTokens({ sdpGrantToken: grant.sdpGrantToken, sdpGrantExpiresAt: grant.sdpGrantExpiresAt })
     sdpGrant = grant.sdpGrantToken
   }
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  if (sdpGrant) headers['x-sdp-grant'] = sdpGrant
+  return headers
+}
+
+export async function fetchWithAuth(input: string, init: RequestInit = {}, retry = true): Promise<Response> {
   init.headers = init.headers || {}
-  if (token && typeof init.headers !== 'string') (init.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
-  if (sdpGrant && typeof init.headers !== 'string') (init.headers as Record<string, string>)['x-sdp-grant'] = sdpGrant
+  const method = init.method || 'GET'
+  const sdpHeaders = await buildSdpHeaders(input, method)
+  if (typeof init.headers !== 'string') {
+    Object.assign(init.headers as Record<string, string>, sdpHeaders)
+  }
   try {
     const res = await fetch(`${API_BASE}${input}`, init)
     if (res.status === 401 && retry) {
@@ -77,7 +87,7 @@ async function fetchWithAuth(input: string, init: RequestInit = {}, retry = true
       if (rres.ok) {
         const rdata = await rres.json()
         if (rdata.success && rdata.token) {
-          const grant = await requestSdpGrant(rdata.token, input)
+          const grant = await requestSdpGrant(rdata.token, input, method)
           setTokens({ token: rdata.token, refreshToken: rdata.refreshToken, ...grant })
           ;(init.headers as Record<string, string>)['Authorization'] = `Bearer ${rdata.token}`
           ;(init.headers as Record<string, string>)['x-sdp-grant'] = grant.sdpGrantToken

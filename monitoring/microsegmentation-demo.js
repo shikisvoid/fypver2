@@ -11,35 +11,39 @@ const DEMO_INTERVAL = 10000; // Run demo every 10 seconds
 // Test scenarios to demonstrate SDP
 const DEMO_SCENARIOS = [
   {
-    name: 'Frontend Isolation Test',
-    description: 'Frontend should NOT access backend database directly',
+    name: 'Edge To Segment Isolation',
+    description: 'Edge workloads should not reach the backend or database segments directly',
     tests: [
-      { source: 'hospital-frontend', target: '172.20.0.10', port: 5432, service: 'database', expected: 'BLOCKED', severity: 'CRITICAL' },
-      { source: 'hospital-frontend', target: '172.20.0.30', port: 3001, service: 'encryption', expected: 'BLOCKED', severity: 'CRITICAL' }
+      { source: 'hospital-frontend', target: 'hospital-backend', port: 3000, service: 'backend-api', expected: 'BLOCKED', severity: 'CRITICAL' },
+      { source: 'hospital-frontend', target: 'hospital-db', port: 5432, service: 'database', expected: 'BLOCKED', severity: 'CRITICAL' },
+      { source: 'hospital-api-gateway', target: 'hospital-backend', port: 3000, service: 'backend-api', expected: 'BLOCKED', severity: 'CRITICAL' }
     ]
   },
   {
-    name: 'Backend Access Test',
-    description: 'Backend API should access database and encryption',
+    name: 'Authorized Backend Path',
+    description: 'Only the internal gateway and backend should traverse the protected backend path',
     tests: [
-      { source: 'hospital-backend', target: '172.20.0.10', port: 5432, service: 'database', expected: 'REACHABLE', severity: 'INFO' },
-      { source: 'hospital-backend', target: '172.20.0.30', port: 3001, service: 'encryption', expected: 'REACHABLE', severity: 'INFO' }
+      { source: 'hospital-api-gateway', target: 'hospital-backend-internal-gateway', port: 3443, service: 'internal-gateway', expected: 'REACHABLE', severity: 'INFO' },
+      { source: 'hospital-backend-internal-gateway', target: 'hospital-backend', port: 3000, service: 'backend-api', expected: 'REACHABLE', severity: 'INFO' },
+      { source: 'hospital-backend', target: 'hospital-db', port: 5432, service: 'database', expected: 'REACHABLE', severity: 'INFO' },
+      { source: 'hospital-backend', target: 'hospital-encryption', port: 3001, service: 'encryption', expected: 'REACHABLE', severity: 'INFO' }
     ]
   },
   {
-    name: 'IAM Isolation Test',
-    description: 'IAM should NOT access backend services directly',
+    name: 'Control Plane Isolation',
+    description: 'Control-plane services should not bypass into the protected backend segment',
     tests: [
-      { source: 'hospital-iam', target: '172.20.0.10', port: 5432, service: 'database', expected: 'BLOCKED', severity: 'CRITICAL' },
-      { source: 'hospital-iam', target: '172.20.0.30', port: 3001, service: 'encryption', expected: 'BLOCKED', severity: 'CRITICAL' }
+      { source: 'hospital-iam', target: 'hospital-backend', port: 3000, service: 'backend-api', expected: 'BLOCKED', severity: 'CRITICAL' },
+      { source: 'hospital-response-controller', target: 'hospital-backend', port: 3000, service: 'backend-api', expected: 'BLOCKED', severity: 'CRITICAL' },
+      { source: 'hospital-response-controller', target: 'hospital-spa-controller', port: 7001, service: 'access-controller', expected: 'REACHABLE', severity: 'INFO' }
     ]
   },
   {
-    name: 'Cross-Network Communication',
-    description: 'Frontend services should communicate via Backend API only',
+    name: 'Observability Path',
+    description: 'Telemetry should still flow without reopening the protected segment',
     tests: [
-      { source: 'hospital-frontend', target: '172.21.0.20', port: 3000, service: 'backend-api', expected: 'REACHABLE', severity: 'INFO' },
-      { source: 'hospital-iam', target: '172.21.0.20', port: 3000, service: 'backend-api', expected: 'REACHABLE', severity: 'INFO' }
+      { source: 'hospital-backend', target: 'hospital-monitor', port: 9090, service: 'telemetry-monitor', expected: 'REACHABLE', severity: 'INFO' },
+      { source: 'hospital-frontend', target: 'hospital-monitor', port: 9090, service: 'telemetry-monitor', expected: 'REACHABLE', severity: 'INFO' }
     ]
   }
 ];
@@ -69,8 +73,7 @@ function log(level, category, message, data = {}) {
 
 function testConnection(source, target, port) {
   try {
-    // Use nc (netcat) with 1 second timeout for faster tests
-    execSync(`docker exec ${source} timeout 1 nc -zv ${target} ${port}`, {
+    execSync(`docker exec ${source} node -e "const net=require('net');const socket=net.connect({host:'${target}',port:${port}});socket.setTimeout(1000);socket.on('connect',()=>{socket.end();process.exit(0)});socket.on('timeout',()=>{socket.destroy();process.exit(1)});socket.on('error',()=>process.exit(1));"`, {
       stdio: 'pipe',
       timeout: 1500
     });
@@ -205,5 +208,3 @@ runFullDemo();
 
 // Continue running demos at regular intervals
 setInterval(runFullDemo, DEMO_INTERVAL);
-
-

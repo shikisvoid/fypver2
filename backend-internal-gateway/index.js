@@ -12,6 +12,7 @@ const GATEWAY_ID = process.env.GATEWAY_ID || 'backend-internal-gateway';
 const GATEWAY_URL = process.env.GATEWAY_URL || 'https://backend-internal-gateway:3443';
 const SERVICE_ID = process.env.SERVICE_ID || 'hospital-backend-app';
 const SERVICE_NAME = process.env.SERVICE_NAME || 'Hospital Backend App';
+const SERVICE_SEGMENT_ID = process.env.SERVICE_SEGMENT_ID || 'backend-clinical-segment';
 const TLS_SERVER_CERT = process.env.TLS_SERVER_CERT || '/certs/internal-gateway/internal-gateway-server.crt';
 const TLS_SERVER_KEY = process.env.TLS_SERVER_KEY || '/certs/internal-gateway/internal-gateway-server.key';
 const TLS_CA_CERT = process.env.TLS_CA_CERT || '/certs/ca/ca.crt';
@@ -81,6 +82,7 @@ async function registerWithController() {
   await postJson(`${CONTROLLER_URL}/register/service`, {
     serviceId: SERVICE_ID,
     name: SERVICE_NAME,
+    segmentId: SERVICE_SEGMENT_ID,
     entryGatewayId: 'external-api-gateway',
     internalGatewayId: GATEWAY_ID,
     originUrl: ORIGIN_URL,

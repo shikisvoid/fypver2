@@ -20,7 +20,9 @@ const IAM_CONFIG = {
 const SDP_CONFIG = {
   HOST: process.env.SDP_ACCESS_CONTROLLER_HOST || 'spa-controller',
   PORT: parseInt(process.env.SDP_ACCESS_CONTROLLER_PORT || '7001', 10),
-  REGISTRATION_TOKEN: process.env.SDP_REGISTRATION_TOKEN || 'sdp_register_demo_token'
+  REGISTRATION_TOKEN: process.env.SDP_REGISTRATION_TOKEN || 'sdp_register_demo_token',
+  DEFAULT_SERVICE_ID: process.env.SDP_DEFAULT_SERVICE_ID || 'hospital-backend-app',
+  DEFAULT_SEGMENT_ID: process.env.SDP_DEFAULT_SEGMENT_ID || 'backend-clinical-segment'
 };
 
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
@@ -183,6 +185,62 @@ function revokeSdpAccess(clientId, userEmail, reason) {
   });
 }
 
+function isolateSdpSegment(segmentId, serviceId, reason) {
+  const normalizedSegmentId = typeof segmentId === 'string' && segmentId.trim() ? segmentId.trim() : null;
+  const normalizedServiceId = typeof serviceId === 'string' && serviceId.trim() ? serviceId.trim() : SDP_CONFIG.DEFAULT_SERVICE_ID;
+
+  if (!normalizedSegmentId && !normalizedServiceId) {
+    return Promise.resolve({ ok: true, skipped: true, reason: 'missing_segment_identity' });
+  }
+
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({
+      segmentId: normalizedSegmentId || SDP_CONFIG.DEFAULT_SEGMENT_ID,
+      serviceId: normalizedServiceId,
+      reason
+    });
+    const options = {
+      hostname: SDP_CONFIG.HOST,
+      port: SDP_CONFIG.PORT,
+      path: '/admin/isolate-segment',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'x-registration-token': SDP_CONFIG.REGISTRATION_TOKEN
+      },
+      timeout: 5000
+    };
+
+    const req = http.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(body || '{}');
+          writeLog(ALERT_LOG, `SDP_SEGMENT_ISOLATE: segmentId=${normalizedSegmentId || SDP_CONFIG.DEFAULT_SEGMENT_ID} serviceId=${normalizedServiceId || 'N/A'} result=${JSON.stringify(response)}`);
+          resolve(response);
+        } catch (e) {
+          resolve({ ok: false, error: 'Parse error' });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      writeLog(ALERT_LOG, `SDP_SEGMENT_ISOLATE_FAILED: ${err.message}`);
+      resolve({ ok: false, error: err.message });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, error: 'timeout' });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 app.use(bodyParser.json());
 
 // Basic alert receiver
@@ -197,6 +255,8 @@ app.post('/alert', async (req, res) => {
     const userEmail = details.userEmail || details.email || null;
     const userRole = details.userRole || null;
     const sdpClientId = details.clientId || details.sdpClientId || null;
+    const sdpServiceId = details.serviceId || details.sdpServiceId || SDP_CONFIG.DEFAULT_SERVICE_ID;
+    const sdpSegmentId = details.segmentId || details.sdpSegmentId || SDP_CONFIG.DEFAULT_SEGMENT_ID;
 
     // ===== ROLE-BASED ACCESS VIOLATION HANDLING =====
     // These are HIGH severity — revoke the user's tokens immediately
@@ -292,6 +352,10 @@ app.post('/alert', async (req, res) => {
         const sdpRevokeResult = await revokeSdpAccess(sdpClientId, userEmail, alert.event);
         action.iamActions.push({ type: 'revoke_sdp_access', clientId: sdpClientId, email: userEmail, result: sdpRevokeResult });
       }
+      if (sdpSegmentId || sdpServiceId) {
+        const isolateResult = await isolateSdpSegment(sdpSegmentId, sdpServiceId, alert.event);
+        action.iamActions.push({ type: 'isolate_segment', segmentId: sdpSegmentId, serviceId: sdpServiceId, result: isolateResult });
+      }
 
       // If alert contains IP address (brute force), block the IP
       if (details.ipAddress) {
@@ -325,6 +389,10 @@ app.post('/alert', async (req, res) => {
       if (sdpClientId || userEmail) {
         const sdpRevokeResult = await revokeSdpAccess(sdpClientId, userEmail, alert.event);
         iamActions.push({ type: 'revoke_sdp_access', clientId: sdpClientId, email: userEmail, result: sdpRevokeResult });
+      }
+      if (sdpSegmentId || sdpServiceId) {
+        const isolateResult = await isolateSdpSegment(sdpSegmentId, sdpServiceId, alert.event);
+        iamActions.push({ type: 'isolate_segment', segmentId: sdpSegmentId, serviceId: sdpServiceId, result: isolateResult });
       }
       if (details.ipAddress) {
         console.log(`[Phase2] 🚫 Blocking IP for HIGH alert: ${details.ipAddress}`);
