@@ -205,6 +205,55 @@ function sendAlertToController(alert) {    return new Promise((resolve, reject) 
 // ============================================================
 const ML_ENGINE_URL = process.env.ML_ENGINE_URL || 'http://172.20.0.140:5000';
 const ML_ENABLED = process.env.ML_ENABLED !== 'false';
+const ML_INFRASTRUCTURE_ALERTING = process.env.ML_INFRASTRUCTURE_ALERTING === 'true';
+const ML_STARTUP_GRACE_MS = parseInt(process.env.ML_STARTUP_GRACE_MS || '90000', 10);
+const ANALYZER_STARTED_AT = Date.now();
+
+function normalizeIdentity(value) {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isUnknownIdentity(value) {
+    const normalized = normalizeIdentity(value);
+    return !normalized || normalized === 'unknown' || normalized === 'unknown@unknown';
+}
+
+function isInfrastructureHost(hostId) {
+    if (typeof hostId !== 'string') return false;
+    return [
+        'hospital-iam',
+        'hospital-frontend',
+        'hospital-backend',
+        'hospital-monitor',
+        'hospital-prometheus',
+        'hospital-grafana',
+        'hospital-ml-engine',
+        'hospital-api-gateway',
+        'hospital-backend-internal-gateway',
+        'hospital-spa-controller',
+        'hospital-sdp-controller',
+        'hospital-response-controller'
+    ].includes(hostId);
+}
+
+function hasMeaningfulIdentity(item, mlResult = null) {
+    const userEmail = item && item.userEmail ? item.userEmail : (mlResult ? mlResult.userEmail : null);
+    const userRole = item && item.userRole ? item.userRole : (mlResult ? mlResult.userRole : null);
+    return !isUnknownIdentity(userEmail) || !isUnknownIdentity(userRole);
+}
+
+function shouldPromoteMlAlert(item, mlResult = null) {
+    if (!item || !mlResult || !mlResult.is_anomaly) return false;
+
+    const startupWarm = (Date.now() - ANALYZER_STARTED_AT) < ML_STARTUP_GRACE_MS;
+    const meaningfulIdentity = hasMeaningfulIdentity(item, mlResult);
+    const infrastructureHost = isInfrastructureHost(item.hostId);
+
+    if (meaningfulIdentity) return true;
+    if (ML_INFRASTRUCTURE_ALERTING) return true;
+    if (infrastructureHost && startupWarm) return false;
+    return !infrastructureHost;
+}
 
 /**
  * Call the ML engine /predict endpoint with telemetry
@@ -459,6 +508,7 @@ async function ruleDbActivity(item) {
 // Called after ML engine returns a prediction for a telemetry item
 async function ruleMLAnomaly(item, mlResult) {
     if (!mlResult || !mlResult.is_anomaly) return null;
+    if (!shouldPromoteMlAlert(item, mlResult)) return null;
 
     const classification = mlResult.classification; // 'Suspicious' or 'Malicious'
     const severity = classification === 'Malicious' ? 'CRITICAL' : 'HIGH';
@@ -491,6 +541,7 @@ async function ruleMLAnomaly(item, mlResult) {
  */
 async function hybridCorrelation(item, mlResult, ruleAlertFired) {
     if (!mlResult) return;
+    if (!shouldPromoteMlAlert(item, mlResult)) return;
 
     // Case 1: Both ML and rules detected something â†’ escalate to CRITICAL
     if (mlResult.is_anomaly && ruleAlertFired) {
@@ -616,6 +667,5 @@ setInterval(main, 5 * 60 * 1000); // full analysis every 5 minutes
 setInterval(pollTelemetry, TELEMETRY_POLL_INTERVAL_MS); // poll telemetry frequently
 // kick off immediate telemetry poll
 pollTelemetry();
-
 
 

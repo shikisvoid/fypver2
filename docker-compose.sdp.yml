@@ -6,7 +6,13 @@ networks:
     driver: bridge
   control-net:
     driver: bridge
-  observe-net:
+  edge-observe-net:
+    driver: bridge
+  control-observe-net:
+    driver: bridge
+  backend-observe-net:
+    driver: bridge
+  security-observe-net:
     driver: bridge
   backend-segment-net:
     driver: bridge
@@ -64,7 +70,7 @@ services:
       - backend-segment-net
       - backend-support-net
       - data-private
-      - observe-net
+      - backend-observe-net
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       JWT_SECRET: ${JWT_SECRET:-sdp_phase2_shared_secret_change_me}
@@ -94,7 +100,7 @@ services:
     working_dir: /app
     networks:
       - backend-support-net
-      - observe-net
+      - backend-observe-net
     volumes:
       - ./Encryption:/app
       - encryption-data:/app/storage
@@ -109,7 +115,7 @@ services:
     init: true
     networks:
       - control-net
-      - observe-net
+      - control-observe-net
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       JWT_SECRET: ${JWT_SECRET:-sdp_phase2_shared_secret_change_me}
@@ -156,6 +162,7 @@ services:
       SDP_REGISTRATION_TOKEN: ${SDP_REGISTRATION_TOKEN:-sdp_register_demo_token}
       SDP_ACCESS_CONFIG_FILE: /app/config.json
       SDP_SPA_UDP_PORT: 62201
+      SDP_BIND_SPA_TO_SOURCE: ${SDP_BIND_SPA_TO_SOURCE:-false}
       SDP_CLIENTS_JSON: ${SDP_CLIENTS_JSON:-}
     volumes:
       - ./spa-controller:/app
@@ -206,7 +213,7 @@ services:
     networks:
       - edge-net
       - control-net
-      - observe-net
+      - edge-observe-net
     environment:
       PORT: 8443
       NODE_ENV: ${NODE_ENV:-development}
@@ -248,7 +255,7 @@ services:
     networks:
       - edge-net
       - control-net
-      - observe-net
+      - edge-observe-net
     environment:
       VITE_API_URL: http://localhost:8088
       VITE_IAM_URL: http://localhost:8088
@@ -282,7 +289,10 @@ services:
     init: true
     networks:
       - control-net
-      - observe-net
+      - edge-observe-net
+      - control-observe-net
+      - backend-observe-net
+      - security-observe-net
     volumes:
       - ./monitoring:/app
       - monitor-logs:/logs
@@ -308,7 +318,10 @@ services:
     image: prom/prometheus:latest
     container_name: hospital-prometheus
     networks:
-      - observe-net
+      - edge-observe-net
+      - control-observe-net
+      - backend-observe-net
+      - security-observe-net
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
@@ -329,7 +342,10 @@ services:
     image: grafana/grafana:latest
     container_name: hospital-grafana
     networks:
-      - observe-net
+      - edge-observe-net
+      - control-observe-net
+      - backend-observe-net
+      - security-observe-net
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
@@ -352,7 +368,7 @@ services:
     init: true
     networks:
       - control-net
-      - observe-net
+      - control-observe-net
     volumes:
       - ./response/controller:/app
       - monitor-logs:/logs
@@ -382,7 +398,7 @@ services:
     init: true
     networks:
       - control-net
-      - observe-net
+      - control-observe-net
     volumes:
       - ./ml-engine/models:/app/models
       - ./ml-engine/data:/app/data:ro
@@ -399,7 +415,7 @@ services:
     container_name: edr-admin-workstation
     working_dir: /edr
     networks:
-      - observe-net
+      - security-observe-net
       - security-net
     volumes:
       - ./agents/real-edr:/edr
@@ -427,7 +443,7 @@ services:
     container_name: edr-doctor-workstation
     working_dir: /edr
     networks:
-      - observe-net
+      - security-observe-net
       - security-net
     volumes:
       - ./agents/real-edr:/edr
@@ -455,7 +471,7 @@ services:
     container_name: edr-nurse-workstation
     working_dir: /edr
     networks:
-      - observe-net
+      - security-observe-net
       - security-net
     volumes:
       - ./agents/real-edr:/edr
@@ -483,7 +499,7 @@ services:
     container_name: edr-receptionist-workstation
     working_dir: /edr
     networks:
-      - observe-net
+      - security-observe-net
       - security-net
     volumes:
       - ./agents/real-edr:/edr
@@ -511,7 +527,7 @@ services:
     container_name: edr-labtech-workstation
     working_dir: /edr
     networks:
-      - observe-net
+      - security-observe-net
       - security-net
     volumes:
       - ./agents/real-edr:/edr
@@ -539,7 +555,7 @@ services:
     container_name: edr-pharmacist-workstation
     working_dir: /edr
     networks:
-      - observe-net
+      - security-observe-net
       - security-net
     volumes:
       - ./agents/real-edr:/edr
@@ -567,7 +583,7 @@ services:
     container_name: edr-accountant-workstation
     working_dir: /edr
     networks:
-      - observe-net
+      - security-observe-net
       - security-net
     volumes:
       - ./agents/real-edr:/edr
@@ -595,7 +611,7 @@ services:
     container_name: edr-patient-terminal
     working_dir: /edr
     networks:
-      - observe-net
+      - security-observe-net
       - security-net
     volumes:
       - ./agents/real-edr:/edr

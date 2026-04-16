@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-10T11:12:37.889Z",
+  "updatedAt": "2026-04-12T23:13:49.694Z",
   "gateways": [
     {
       "gatewayId": "backend-internal-gateway",
@@ -10,7 +10,7 @@
         "hospital-backend-app"
       ],
       "description": "Internal gateway for backend services",
-      "registeredAt": "2026-04-10T11:00:56.638Z"
+      "registeredAt": "2026-04-12T23:03:07.445Z"
     },
     {
       "gatewayId": "external-api-gateway",
@@ -20,13 +20,14 @@
         "hospital-backend-app"
       ],
       "description": "External gateway for hospital services",
-      "registeredAt": "2026-04-10T11:00:59.054Z"
+      "registeredAt": "2026-04-12T23:03:13.511Z"
     }
   ],
   "services": [
     {
       "serviceId": "hospital-backend-app",
       "name": "Hospital Backend App",
+      "segmentId": "backend-clinical-segment",
       "entryGatewayId": "external-api-gateway",
       "internalGatewayId": "backend-internal-gateway",
       "originUrl": "http://backend:3000",
@@ -52,7 +53,18 @@
         "/api/users"
       ],
       "requiresIdentity": true,
-      "registeredAt": "2026-04-10T11:00:56.674Z"
+      "registeredAt": "2026-04-12T23:03:07.482Z"
+    }
+  ],
+  "isolatedSegments": [
+    {
+      "segmentId": "backend-clinical-segment",
+      "serviceId": "hospital-backend-app",
+      "reason": "ML_RULE_CORRELATED",
+      "isolatedAt": "2026-04-12T23:03:55.286Z",
+      "affectedServices": [
+        "hospital-backend-app"
+      ]
     }
   ],
   "spaAdmissions": [],

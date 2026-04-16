@@ -66,7 +66,7 @@ const req = https.request({
   });
 });
 
-req.setTimeout(5000, () => {
+req.setTimeout(15000, () => {
   req.destroy(new Error('request timed out'));
 });
 req.on('error', (err) => {

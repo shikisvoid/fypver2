@@ -25,6 +25,22 @@ const SDP_CONFIG = {
   DEFAULT_SEGMENT_ID: process.env.SDP_DEFAULT_SEGMENT_ID || 'backend-clinical-segment'
 };
 
+const SEGMENT_ISOLATION_EVENTS = new Set([
+  'ML_RULE_CORRELATED',
+  'ML_ANOMALY',
+  'ROLE_ACCESS_VIOLATION',
+  'DB_MASS_DELETE',
+  'DB_MASS_DELETE_STATS',
+  'DB_UNAUTHORIZED_TABLE_ACCESS',
+  'DB_BULK_DATA_READ',
+  'DB_SUDDEN_ROW_DROP',
+  'DB_SCHEMA_CHANGE',
+  'RANSOMWARE_DETECTED',
+  'DATA_EXFILTRATION',
+  'PRIVILEGE_ESCALATION',
+  'LATERAL_MOVEMENT'
+]);
+
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
 function writeLog(file, message) {
@@ -241,6 +257,39 @@ function isolateSdpSegment(segmentId, serviceId, reason) {
   });
 }
 
+function shouldIsolateSegment(alert, details = {}) {
+  if (!alert || typeof alert !== 'object') {
+    return false;
+  }
+
+  const normalizedEmail = typeof details.userEmail === 'string' ? details.userEmail.trim().toLowerCase() : '';
+  const normalizedRole = typeof details.userRole === 'string' ? details.userRole.trim().toLowerCase() : '';
+  const hasMeaningfulIdentity =
+    (normalizedEmail && normalizedEmail !== 'unknown' && normalizedEmail !== 'unknown@unknown') ||
+    (normalizedRole && normalizedRole !== 'unknown');
+
+  if (details.forceSegmentIsolation === true) {
+    return true;
+  }
+
+  // Do not auto-isolate the application segment from anonymous infrastructure-only ML alerts.
+  // This keeps the demo baseline clean after a fresh reset while still allowing
+  // explicit hybrid/rule-correlated detections and user-bound alerts to isolate.
+  if (alert.event === 'ML_ANOMALY' && !hasMeaningfulIdentity) {
+    return false;
+  }
+
+  if (typeof details.classification === 'string' && details.classification.toLowerCase() === 'malicious') {
+    return true;
+  }
+
+  if (SEGMENT_ISOLATION_EVENTS.has(alert.event)) {
+    return true;
+  }
+
+  return alert.severity === 'CRITICAL';
+}
+
 app.use(bodyParser.json());
 
 // Basic alert receiver
@@ -297,9 +346,22 @@ app.post('/alert', async (req, res) => {
       const mlScore = details.anomaly_score || details.ml_score || 0;
       const mlConfidence = details.confidence || details.ml_confidence || 0;
       const detectionType = details.detection_type || 'ml';
+      const normalizedMlEmail = typeof userEmail === 'string' ? userEmail.trim().toLowerCase() : '';
+      const normalizedMlRole = typeof userRole === 'string' ? userRole.trim().toLowerCase() : '';
+      const mlHasMeaningfulIdentity =
+        (normalizedMlEmail && normalizedMlEmail !== 'unknown' && normalizedMlEmail !== 'unknown@unknown') ||
+        (normalizedMlRole && normalizedMlRole !== 'unknown');
 
       writeLog(ALERT_LOG, `ML_DETECTION: event=${alert.event} class=${mlClassification} score=${mlScore} confidence=${mlConfidence} role=${userRole} email=${userEmail} host=${alert.hostId} type=${detectionType}`);
       console.log(`[Phase2] 🧠 ML Detection: ${alert.event} — ${mlClassification} (score=${mlScore}, confidence=${mlConfidence}) from ${userEmail || alert.hostId} (${userRole || 'unknown'})`);
+
+      // Baseline infrastructure telemetry can be noisy immediately after startup.
+      // Treat anonymous ML-only detections as informational unless a real user/device
+      // identity is attached or a rule-correlated event escalates them.
+      if (alert.event === 'ML_ANOMALY' && !mlHasMeaningfulIdentity) {
+        writeLog(ALERT_LOG, `ML_INFRA_BASELINE_IGNORED: host=${alert.hostId} class=${mlClassification} score=${mlScore} confidence=${mlConfidence}`);
+        return res.json({ ok: true, action: 'log_only', classification: mlClassification, ignored: 'anonymous_ml_baseline' });
+      }
 
       // ML_RULE_CORRELATED → both ML and rules detected, escalate to CRITICAL
       if (alert.event === 'ML_RULE_CORRELATED') {
@@ -352,7 +414,7 @@ app.post('/alert', async (req, res) => {
         const sdpRevokeResult = await revokeSdpAccess(sdpClientId, userEmail, alert.event);
         action.iamActions.push({ type: 'revoke_sdp_access', clientId: sdpClientId, email: userEmail, result: sdpRevokeResult });
       }
-      if (sdpSegmentId || sdpServiceId) {
+      if (shouldIsolateSegment(alert, details) && (sdpSegmentId || sdpServiceId)) {
         const isolateResult = await isolateSdpSegment(sdpSegmentId, sdpServiceId, alert.event);
         action.iamActions.push({ type: 'isolate_segment', segmentId: sdpSegmentId, serviceId: sdpServiceId, result: isolateResult });
       }
@@ -390,7 +452,7 @@ app.post('/alert', async (req, res) => {
         const sdpRevokeResult = await revokeSdpAccess(sdpClientId, userEmail, alert.event);
         iamActions.push({ type: 'revoke_sdp_access', clientId: sdpClientId, email: userEmail, result: sdpRevokeResult });
       }
-      if (sdpSegmentId || sdpServiceId) {
+      if (shouldIsolateSegment(alert, details) && (sdpSegmentId || sdpServiceId)) {
         const isolateResult = await isolateSdpSegment(sdpSegmentId, sdpServiceId, alert.event);
         iamActions.push({ type: 'isolate_segment', segmentId: sdpSegmentId, serviceId: sdpServiceId, result: isolateResult });
       }

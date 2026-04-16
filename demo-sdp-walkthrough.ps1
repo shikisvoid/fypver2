@@ -68,7 +68,7 @@ const req = https.request({
   });
 });
 
-req.setTimeout(5000, () => {
+req.setTimeout(15000, () => {
   req.destroy(new Error('request timed out'));
 });
 req.on('error', (err) => {
@@ -346,19 +346,24 @@ function Show-ContainerNetworks {
     param([string[]]$Containers)
 
     foreach ($container in $Containers) {
-        $networks = docker inspect -f "{{range `$name, `$network := .NetworkSettings.Networks}}{{printf '%s ' `$name}}{{end}}" $container
-        Write-Host (" - {0}: {1}" -f $container, ($networks.Trim())) -ForegroundColor Gray
+        $inspect = docker inspect $container | ConvertFrom-Json
+        $networkNames = @()
+        if ($inspect -and $inspect[0] -and $inspect[0].NetworkSettings -and $inspect[0].NetworkSettings.Networks) {
+            $networkNames = $inspect[0].NetworkSettings.Networks.PSObject.Properties.Name
+        }
+        $networkText = if ($networkNames.Count -gt 0) { $networkNames -join ', ' } else { 'no networks found' }
+        Write-Host (" - {0}: {1}" -f $container, $networkText) -ForegroundColor Gray
     }
 }
 
 function Test-ContainerTcpReachability {
     param(
         [string]$Container,
-        [string]$Host,
+        [string]$TargetHost,
         [int]$Port
     )
 
-    docker exec $Container node -e "const net=require('net');const socket=net.connect({host:'$Host',port:$Port});socket.setTimeout(1200);socket.on('connect',()=>{socket.end();process.exit(0)});socket.on('timeout',()=>{socket.destroy();process.exit(1)});socket.on('error',()=>process.exit(1));" | Out-Null
+    docker exec $Container node -e "const net=require('net');const socket=net.connect({host:'$TargetHost',port:$Port});socket.setTimeout(1200);socket.on('connect',()=>{socket.end();process.exit(0)});socket.on('timeout',()=>{socket.destroy();process.exit(1)});socket.on('error',()=>process.exit(1));" | Out-Null
     return $LASTEXITCODE -eq 0
 }
 
@@ -383,26 +388,35 @@ function Invoke-ReleaseSegment {
     return Invoke-RestMethod -Uri "$controllerBase/admin/release-segment" -Method POST -ContentType "application/json" -Headers @{ "x-registration-token" = $registrationToken } -Body $body
 }
 
+function Ensure-SegmentReleased {
+    param([string]$Reason)
+
+    try {
+        $result = Invoke-ReleaseSegment -Reason $Reason
+        Write-Host "Segment release check: released=$($result.released)" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "Segment release check skipped: $($_.Exception.Message)" -ForegroundColor DarkGray
+    }
+}
+
 Write-Host "`nSDP Demo Walkthrough" -ForegroundColor Green
 Write-Host "This script is presentation-friendly and pauses between each scenario." -ForegroundColor Green
 
-Show-Step "Step 0: Start Clean" "We reset the stack, remove old SDP audit/state files, and start from a clean baseline."
+Show-Step "Step 0: Start Clean" "We run the reset script so old SDP state, isolation history, and telemetry do not leak into the presentation."
 Pause-Demo
-powershell -ExecutionPolicy Bypass -File .\generate-demo-certs.ps1 | Out-Null
-docker compose -f $composeFile down | Out-Null
-Reset-DemoArtifacts
-docker compose -f $composeFile up -d | Out-Null
+powershell -ExecutionPolicy Bypass -File .\RESET-SDP-DEMO.ps1 | Out-Null
 Wait-Http200 "$controllerBase/health" 240
 Wait-Http200 "$gatewayBase/health" 240 -UseMtls
 Wait-Http200 $internalGatewayHealth 240 -UseMtls
+Ensure-SegmentReleased -Reason "demo_start_reset"
 Write-Host "Stack is ready." -ForegroundColor Green
 Show-GrantState
 Pause-Demo
 
 Show-Step "Step 1: Segmented Network Layout" "We show that the edge gateway, internal gateway, backend, and database now sit on different trust-zone networks."
 Show-ContainerNetworks -Containers @("hospital-api-gateway", "hospital-backend-internal-gateway", "hospital-backend", "hospital-db")
-$edgeToBackend = Test-ContainerTcpReachability -Container "hospital-api-gateway" -Host "hospital-backend" -Port 3000
-$internalToBackend = Test-ContainerTcpReachability -Container "hospital-backend-internal-gateway" -Host "hospital-backend" -Port 3000
+$edgeToBackend = Test-ContainerTcpReachability -Container "hospital-api-gateway" -TargetHost "hospital-backend" -Port 3000
+$internalToBackend = Test-ContainerTcpReachability -Container "hospital-backend-internal-gateway" -TargetHost "hospital-backend" -Port 3000
 Write-Host "API gateway -> backend: $edgeToBackend (expected False)" -ForegroundColor Green
 Write-Host "Internal gateway -> backend: $internalToBackend (expected True)" -ForegroundColor Green
 Pause-Demo
@@ -447,6 +461,7 @@ Show-RecentAudit
 Pause-Demo
 
 Show-Step "Step 8: Issue Valid Grant" "Now the admin requests a backend grant for `/api/patients`. The access controller checks client credentials, SPA admission, and policy before issuing it."
+Ensure-SegmentReleased -Reason "pre_valid_grant_demo"
 $grantResp = Invoke-GrantRequest -UserToken $adminToken -RequestedPath "/api/patients"
 Write-Host "Grant issued for service: $($grantResp.service.serviceId)" -ForegroundColor Green
 Write-Host "Grant expires at: $($grantResp.expiresAt)" -ForegroundColor Green
@@ -465,7 +480,7 @@ Write-Host "HTTP result: $codeWithGrant" -ForegroundColor Green
 Show-RecentAudit
 Pause-Demo
 
-Show-Step "Step 10: Segment Isolation" "Now we isolate the backend segment itself. New grants into that protected segment are denied even though the user and device are still valid."
+Show-Step "Step 10: Controlled Isolation Proof" "Before simulating a real attack, we do one controlled isolation check to prove the controller can quarantine the backend zone and deny new grants into it."
 $segmentIsolation = Invoke-IsolateSegment -Reason "demo_segment_isolation"
 Write-Host "Segment isolation response: revokedGrants=$($segmentIsolation.revokedGrants)" -ForegroundColor Green
 $isolatedGrantDenied = Test-GrantDenied403 -UserToken $adminToken -RequestedPath "/api/patients"
@@ -474,7 +489,7 @@ Show-RecentAudit -Limit 8
 Show-GrantState
 Pause-Demo
 
-Show-Step "Step 11: Release Segment And Re-Issue Grant" "After releasing the segment, the same authenticated client can request a fresh grant again."
+Show-Step "Step 11: Restore Normal Access" "After proving the control works, we release the backend zone so the demo can continue in a normal non-attack state."
 $segmentRelease = Invoke-ReleaseSegment -Reason "demo_segment_release"
 Write-Host "Segment released: $($segmentRelease.released)" -ForegroundColor Green
 $grantResp = Invoke-GrantRequest -UserToken $adminToken -RequestedPath "/api/patients"
@@ -482,9 +497,9 @@ $headersWithGrant["x-sdp-grant"] = "$($grantResp.grantToken)"
 Write-Host "Fresh grant issued after release." -ForegroundColor Green
 Pause-Demo
 
-Show-Step "Step 12: Quarantine / Revocation" "We simulate a response-controller alert. It revokes IAM access, revokes live grants, and isolates the protected segment."
+Show-Step "Step 12: Attack Occurs -> Zone Isolation" "Now we simulate a real attack. The response controller treats it as a threat event, revokes user access, revokes active grants, and isolates the backend zone automatically."
 $alertBody = @{
-    severity = "HIGH"
+    severity = "CRITICAL"
     event = "ML_RULE_CORRELATED"
     hostId = "admin-laptop-01"
     details = @{
@@ -493,6 +508,7 @@ $alertBody = @{
         sdpClientId = $clientId
         serviceId = $serviceId
         segmentId = $segmentId
+        classification = "Malicious"
         detection_type = "demo-walkthrough"
     }
 } | ConvertTo-Json -Compress -Depth 5
@@ -500,6 +516,8 @@ $alertResp = Invoke-RestMethod -Uri "http://127.0.0.1:4100/alert" -Method POST -
 Write-Host "Response controller accepted alert: $($alertResp.ok)" -ForegroundColor Green
 $codeAfterRevoke = Get-HttpCode -Url "$gatewayBase/api/patients" -Headers $headersWithGrant -UseMtls
 Write-Host "Old grant after revocation returns HTTP: $codeAfterRevoke" -ForegroundColor Green
+$freshGrantBlockedAfterAttack = Test-GrantDenied403 -UserToken $adminToken -RequestedPath "/api/patients"
+Write-Host "Fresh grant after attack-induced zone isolation denied: $freshGrantBlockedAfterAttack" -ForegroundColor Green
 Show-RecentAudit -Limit 8
 Show-GrantState
 Pause-Demo "Demo complete. Press Enter to show final reminders"
