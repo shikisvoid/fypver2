@@ -356,6 +356,19 @@ function Show-ContainerNetworks {
     }
 }
 
+function Show-ExpectationResult {
+    param(
+        [string]$Label,
+        [bool]$Actual,
+        [bool]$Expected
+    )
+
+    $passed = $Actual -eq $Expected
+    $status = if ($passed) { "PASS" } else { "FAIL" }
+    $color = if ($passed) { "Green" } else { "Red" }
+    Write-Host ("{0}: {1} (expected {2}) [{3}]" -f $Label, $Actual, $Expected, $status) -ForegroundColor $color
+}
+
 function Test-ContainerTcpReachability {
     param(
         [string]$Container,
@@ -417,8 +430,8 @@ Show-Step "Step 1: Segmented Network Layout" "We show that the edge gateway, int
 Show-ContainerNetworks -Containers @("hospital-api-gateway", "hospital-backend-internal-gateway", "hospital-backend", "hospital-db")
 $edgeToBackend = Test-ContainerTcpReachability -Container "hospital-api-gateway" -TargetHost "hospital-backend" -Port 3000
 $internalToBackend = Test-ContainerTcpReachability -Container "hospital-backend-internal-gateway" -TargetHost "hospital-backend" -Port 3000
-Write-Host "API gateway -> backend: $edgeToBackend (expected False)" -ForegroundColor Green
-Write-Host "Internal gateway -> backend: $internalToBackend (expected True)" -ForegroundColor Green
+Show-ExpectationResult -Label "API gateway -> backend" -Actual $edgeToBackend -Expected $false
+Show-ExpectationResult -Label "Internal gateway -> backend" -Actual $internalToBackend -Expected $true
 Pause-Demo
 
 Show-Step "Step 2: No mTLS Certificate" "Without a client certificate, the connection is rejected before the protected SDP flow can continue."

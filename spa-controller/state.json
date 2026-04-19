@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-12T23:13:49.694Z",
+  "updatedAt": "2026-04-16T15:57:28.163Z",
   "gateways": [
     {
       "gatewayId": "backend-internal-gateway",
@@ -10,7 +10,7 @@
         "hospital-backend-app"
       ],
       "description": "Internal gateway for backend services",
-      "registeredAt": "2026-04-12T23:03:07.445Z"
+      "registeredAt": "2026-04-16T12:48:25.884Z"
     },
     {
       "gatewayId": "external-api-gateway",
@@ -20,7 +20,7 @@
         "hospital-backend-app"
       ],
       "description": "External gateway for hospital services",
-      "registeredAt": "2026-04-12T23:03:13.511Z"
+      "registeredAt": "2026-04-16T12:48:29.446Z"
     }
   ],
   "services": [
@@ -53,7 +53,7 @@
         "/api/users"
       ],
       "requiresIdentity": true,
-      "registeredAt": "2026-04-12T23:03:07.482Z"
+      "registeredAt": "2026-04-16T12:48:25.917Z"
     }
   ],
   "isolatedSegments": [
@@ -61,7 +61,7 @@
       "segmentId": "backend-clinical-segment",
       "serviceId": "hospital-backend-app",
       "reason": "ML_RULE_CORRELATED",
-      "isolatedAt": "2026-04-12T23:03:55.286Z",
+      "isolatedAt": "2026-04-16T12:55:16.801Z",
       "affectedServices": [
         "hospital-backend-app"
       ]
