@@ -13,6 +13,7 @@ const SPA_UDP_PORT = parseInt(process.env.SDP_SPA_UDP_PORT || '62201', 10);
 const CONFIG_FILE = process.env.SDP_ACCESS_CONFIG_FILE || path.join(__dirname, 'config.json');
 const STATE_FILE = process.env.SDP_STATE_FILE || path.join(__dirname, 'state.json');
 const AUDIT_LOG_FILE = process.env.SDP_AUDIT_LOG_FILE || path.join(__dirname, 'audit.log');
+const DEMO_AUDIT_LOG_FILE = process.env.SDP_DEMO_AUDIT_LOG_FILE || path.join(__dirname, 'audit-demo.log');
 const JWT_SECRET = readSecret('JWT_SECRET', 'sdp_phase2_shared_secret_change_me');
 const GRANT_SIGNING_SECRET = readSecret('SDP_GRANT_SIGNING_SECRET', 'sdp_access_grant_secret_change_me');
 const POLICY_ENGINE_URL = process.env.SDP_POLICY_ENGINE_URL || 'http://sdp-controller:7000';
@@ -117,15 +118,140 @@ function persistStateQuietly() {
   }
 }
 
+function classifyAuditEvent(eventType, details = {}) {
+  const reason = typeof details.reason === 'string' ? details.reason : '';
+
+  switch (eventType) {
+    case 'segment_isolated':
+      return { category: 'segmentation', outcome: 'isolated' };
+    case 'segment_released':
+      return { category: 'segmentation', outcome: 'released' };
+    case 'grant_issued':
+    case 'gateway_authorized':
+    case 'spa_admission_issued':
+    case 'spa_admission_validated':
+      return { category: 'access', outcome: 'allowed' };
+    case 'grant_denied':
+    case 'gateway_authorization_denied':
+    case 'policy_denied':
+    case 'spa_admission_denied':
+    case 'spa_knock_denied':
+    case 'registration_denied':
+      return { category: 'access', outcome: 'denied' };
+    case 'access_revoked':
+      return { category: 'response', outcome: 'revoked' };
+    case 'gateway_registered':
+    case 'service_registered':
+      return { category: 'registration', outcome: 'registered' };
+    default:
+      return {
+        category: reason.includes('segment') ? 'segmentation' : 'system',
+        outcome: 'recorded'
+      };
+  }
+}
+
+function summarizeAuditEvent(eventType, details = {}) {
+  const serviceId = details.serviceId || 'unknown-service';
+  const segmentId = details.segmentId || 'unknown-segment';
+  const clientId = details.clientId || 'unknown-client';
+  const gatewayId = details.gatewayId || 'unknown-gateway';
+  const pathname = details.pathname || details.requestedPath || 'n/a';
+  const userEmail = details.user && details.user.email ? details.user.email : (details.userEmail || 'unknown-user');
+  const userRole = details.user && details.user.role ? details.user.role : (details.userRole || 'unknown-role');
+  const reason = details.reason || 'none';
+
+  switch (eventType) {
+    case 'segment_isolated':
+      return `Segment ${segmentId} isolated for ${serviceId} because ${reason}`;
+    case 'segment_released':
+      return `Segment ${segmentId} released and access can resume`;
+    case 'grant_issued':
+      return `Grant issued to ${clientId} for ${serviceId} as ${userEmail}`;
+    case 'grant_denied':
+      return `Grant denied for ${serviceId} on ${pathname} because ${reason}`;
+    case 'gateway_authorized':
+      return `Gateway ${gatewayId} allowed ${pathname} for ${userEmail} (${userRole})`;
+    case 'gateway_authorization_denied':
+      return `Gateway ${gatewayId} denied ${pathname} because ${reason}`;
+    case 'spa_admission_issued':
+      return `SPA admission created for ${clientId}`;
+    case 'spa_admission_validated':
+      return `SPA admission validated for ${clientId}`;
+    case 'spa_admission_denied':
+      return `SPA admission denied for ${clientId} because ${reason}`;
+    case 'spa_knock_denied':
+      return `SPA knock denied for ${clientId} because ${reason}`;
+    case 'policy_denied':
+      return `Policy denied ${serviceId} for ${userEmail} (${userRole})`;
+    case 'access_revoked':
+      return `Access revoked for ${userEmail}; admissions=${details.revokedAdmissions || 0}, grants=${details.revokedGrants || 0}`;
+    case 'gateway_registered':
+      return `Gateway ${gatewayId} registered`;
+    case 'service_registered':
+      return `Service ${serviceId} registered in segment ${segmentId}`;
+    default:
+      return `${eventType} recorded`;
+  }
+}
+
+function formatDemoAuditEvent(entry) {
+  const details = entry.details || {};
+  const lines = [
+    '='.repeat(78),
+    `${entry.ts}  ${String(entry.eventType || 'unknown_event').toUpperCase()}`,
+    `Category : ${entry.category || 'system'}`,
+    `Outcome  : ${entry.outcome || 'recorded'}`,
+    `Summary  : ${entry.summary || 'No summary available'}`
+  ];
+
+  const principal = details.user && details.user.email
+    ? `${details.user.email}${details.user.role ? ` (${details.user.role})` : ''}`
+    : (details.userEmail || details.clientId || details.clientCertCn || null);
+  const target = details.segmentId || details.serviceId || details.gatewayId || details.pathname || null;
+  const reason = details.reason || null;
+
+  if (principal) lines.push(`Actor    : ${principal}`);
+  if (target) lines.push(`Target   : ${target}`);
+  if (reason) lines.push(`Reason   : ${reason}`);
+
+  const spotlight = {};
+  for (const [key, value] of Object.entries(details)) {
+    if (
+      ['user', 'previousIsolation', 'affectedServices'].includes(key) ||
+      key.endsWith('At') ||
+      key.endsWith('Id') ||
+      ['reason', 'pathname', 'method', 'clientCertCn', 'sourceIp', 'requestSource', 'admittedSource'].includes(key)
+    ) {
+      spotlight[key] = value;
+    }
+  }
+
+  if (Object.keys(spotlight).length > 0) {
+    lines.push('Details  :');
+    for (const [key, value] of Object.entries(spotlight)) {
+      lines.push(`  - ${key}: ${JSON.stringify(value)}`);
+    }
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
 function appendAuditEvent(eventType, details = {}) {
+  const classification = classifyAuditEvent(eventType, details);
   const entry = {
     ts: new Date().toISOString(),
     eventType,
+    category: classification.category,
+    outcome: classification.outcome,
+    summary: summarizeAuditEvent(eventType, details),
     details
   };
   try {
     ensureParentDir(AUDIT_LOG_FILE);
     fs.appendFileSync(AUDIT_LOG_FILE, `${JSON.stringify(entry)}\n`);
+    ensureParentDir(DEMO_AUDIT_LOG_FILE);
+    fs.appendFileSync(DEMO_AUDIT_LOG_FILE, formatDemoAuditEvent(entry));
   } catch (err) {
     console.warn(`[SDP-ACCESS] Failed to append audit event ${eventType}: ${err.message}`);
   }

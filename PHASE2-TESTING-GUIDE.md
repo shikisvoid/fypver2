@@ -171,7 +171,7 @@ Open these URLs in your browser:
 # Start an EDR agent (simulated)
 cd agents/edr-prototype/node-agent
 npm install
-$env:TARGET="http://localhost:9090/ingest/telemetry"
+$env:TARGET="http://localhost:9093/ingest/telemetry"
 $env:HOST_ID="test-endpoint-1"
 $env:INTERVAL_MS="2000"
 node index.js
@@ -185,7 +185,7 @@ node index.js
 **Verification:**
 ```powershell
 # Check telemetry endpoint
-curl.exe http://localhost:9090/telemetry
+curl.exe http://localhost:9093/telemetry
 
 # View telemetry log
 cd "C:\Users\HP\Desktop\PHASE1\PHASE1\PHASE1\HealthCareCenter"
@@ -518,7 +518,6 @@ Start-Process "http://localhost:3002"
 ### âŒ Not Implemented (As Requested)
 1. **ML-Based Anomaly Detection** - Statistical/ML models for baseline behavior
 2. **Anomaly Analysis** - Deviation detection from normal patterns
-
 
 
 

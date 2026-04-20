@@ -84,7 +84,7 @@ Expected: 8 `edr-*` containers visible and `Up`.
 
 ### 2) Prove telemetry is being ingested
 ```powershell
-curl.exe http://localhost:9090/telemetry
+curl.exe http://localhost:9093/telemetry
 ```
 
 Expected: JSON with `recentTelemetry` entries containing `hostId`, `userRole`, `userEmail`, `processes`, `network`, `logs`.
@@ -161,4 +161,3 @@ From `ml-engine/models/training_metrics.json`:
 - ROC-AUC: `0.9871`
 
 These are generated from actual local training runs and persisted in artifact files.
-

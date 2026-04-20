@@ -4,7 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = process.env.METRICS_PORT ? parseInt(process.env.METRICS_PORT, 10) : 9090;
+const PORT = process.env.METRICS_PORT ? parseInt(process.env.METRICS_PORT, 10) : 9092;
 
 const DEFAULT_LOG_DIR = process.platform === 'win32' ? 'C:\\logs' : '/logs';
 const LOG_DIR = process.env.LOG_DIR || DEFAULT_LOG_DIR;
@@ -15,9 +15,6 @@ const SPA_CONTROLLER_BASE_URL = process.env.SPA_CONTROLLER_BASE_URL || 'http://s
 const MAX_JSON_LOG_LINES = process.env.MAX_JSON_LOG_LINES ? parseInt(process.env.MAX_JSON_LOG_LINES, 10) : 2000;
 const MAX_TEXT_LOG_LINES = process.env.MAX_TEXT_LOG_LINES ? parseInt(process.env.MAX_TEXT_LOG_LINES, 10) : 1000;
 const MAX_TAIL_BYTES = process.env.MAX_TAIL_BYTES ? parseInt(process.env.MAX_TAIL_BYTES, 10) : (1024 * 1024);
-
-const RECENT_TELEMETRY_MAX = 100;
-const recentTelemetry = [];
 
 const HOST_SEGMENT_MAP = {
   'hospital-api-gateway': 'edge',
@@ -38,6 +35,9 @@ const HOST_SEGMENT_MAP = {
   'sdp-controller': 'control',
   'hospital-response-controller': 'control',
   'hospital-monitor': 'observability',
+  'hospital-collector': 'observability',
+  'hospital-detector': 'observability',
+  'hospital-exporter': 'observability',
   'hospital-prometheus': 'observability',
   'hospital-grafana': 'observability',
   'hospital-ml-engine': 'control',
@@ -72,6 +72,7 @@ function createEmptyMetrics() {
     eventTypeTotals: new Map(),
     actionTotals: new Map(),
     isolatedSegments: new Map(),
+    knownSegments: new Set(Object.values(HOST_SEGMENT_MAP).map((segment) => normalizeLabel(segment))),
     gateways: [],
     services: []
   };
@@ -191,6 +192,7 @@ function fetchJson(urlString) {
 
 function getSegmentMetrics(segment) {
   const key = normalizeLabel(segment);
+  rememberSegment(key);
   if (!metrics.segmentTelemetry.has(key)) {
     metrics.segmentTelemetry.set(key, {
       hosts: new Set(),
@@ -212,6 +214,7 @@ function getSegmentMetrics(segment) {
 
 function getHostMetrics(hostId, role, segment) {
   const normalizedHost = normalizeLabel(hostId);
+  rememberSegment(segment);
   if (!metrics.hostTelemetry.has(normalizedHost)) {
     metrics.hostTelemetry.set(normalizedHost, {
       hostId: normalizedHost,
@@ -234,6 +237,10 @@ function getHostMetrics(hostId, role, segment) {
 
 function incrementMapCount(map, key, amount = 1) {
   map.set(key, (map.get(key) || 0) + amount);
+}
+
+function rememberSegment(segment) {
+  metrics.knownSegments.add(normalizeLabel(segment));
 }
 
 function resolveSegment(hostId, telemetry = null) {
@@ -368,6 +375,7 @@ function parseIsolationMetrics() {
     );
     const action = normalizeLabel(isolation.action || isolation.reason || 'unknown_action');
 
+    rememberSegment(segment);
     incrementMapCount(metrics.actionTotals, `${segment}|${action}`);
   }
 }
@@ -391,9 +399,14 @@ async function parseSpaStateMetrics() {
   metrics.gateways = Array.isArray(directory.gateways) ? directory.gateways : [];
   metrics.services = Array.isArray(directory.services) ? directory.services : [];
 
+  for (const service of metrics.services) {
+    rememberSegment(service.segmentId);
+  }
+
   const isolatedSegments = Array.isArray(health.isolatedSegments) ? health.isolatedSegments : [];
   for (const isolation of isolatedSegments) {
     const segmentId = normalizeLabel(isolation.segmentId);
+    rememberSegment(segmentId);
     metrics.isolatedSegments.set(segmentId, {
       segmentId,
       serviceId: normalizeLabel(isolation.serviceId),
@@ -556,11 +569,9 @@ function generateMetrics() {
   }
 
   lines.push('', '# HELP sdp_segment_isolated Current isolation state for a segment', '# TYPE sdp_segment_isolated gauge');
-  for (const isolation of metrics.isolatedSegments.values()) {
-    lines.push(promLine('sdp_segment_isolated', 1, {
-      segment: isolation.segmentId,
-      service_id: isolation.serviceId,
-      reason: isolation.reason
+  for (const segment of Array.from(metrics.knownSegments).sort()) {
+    lines.push(promLine('sdp_segment_isolated', metrics.isolatedSegments.has(segment) ? 1 : 0, {
+      segment
     }, timestamp));
   }
 
@@ -602,35 +613,6 @@ const server = http.createServer(async (req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'healthy', uptime: process.uptime() }));
-    return;
-  }
-
-  if (req.url === '/telemetry' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ recentTelemetry }));
-    return;
-  }
-
-  if (req.url === '/ingest/telemetry' && req.method === 'POST') {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const data = JSON.parse(body);
-        data.receivedAt = new Date().toISOString();
-        fs.appendFile(TELEMETRY_LOG, `${JSON.stringify(data)}\n`, (err) => {
-          if (err) console.error('Failed to write telemetry:', err.message);
-        });
-        recentTelemetry.push(data);
-        if (recentTelemetry.length > RECENT_TELEMETRY_MAX) recentTelemetry.shift();
-        metrics.telemetry_received += 1;
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
-      } catch (err) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'invalid json' }));
-      }
-    });
     return;
   }
 

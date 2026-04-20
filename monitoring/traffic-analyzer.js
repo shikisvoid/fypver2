@@ -168,9 +168,11 @@ ${'='.repeat(80)}
 
 // --- Telemetry polling & alerting (integrate EDR telemetry) ---
 const CONTROLLER_URL = process.env.CONTROLLER_URL || 'http://localhost:4100/alert';
+const COLLECTOR_URL = process.env.COLLECTOR_URL || 'http://collector:9090';
 const TELEMETRY_POLL_INTERVAL_MS = parseInt(process.env.TELEMETRY_POLL_MS || '2000', 10);
 const ALERT_DEDUP_TTL_MS = 30 * 1000;
 const recentAlerts = new Map(); // key -> timestamp
+let lastTelemetrySequence = 0;
 
 function sendAlertToController(alert) {    return new Promise((resolve, reject) => {
         try {
@@ -225,6 +227,9 @@ function isInfrastructureHost(hostId) {
         'hospital-frontend',
         'hospital-backend',
         'hospital-monitor',
+        'hospital-collector',
+        'hospital-detector',
+        'hospital-exporter',
         'hospital-prometheus',
         'hospital-grafana',
         'hospital-ml-engine',
@@ -570,7 +575,10 @@ async function hybridCorrelation(item, mlResult, ruleAlertFired) {
 // Main telemetry poll â€” runs all detection rules + ML on each item
 async function pollTelemetry() {
     try {
-        const url = 'http://127.0.0.1:9090/telemetry';
+        const url = new URL('/telemetry', COLLECTOR_URL);
+        if (lastTelemetrySequence > 0) {
+            url.searchParams.set('since', String(lastTelemetrySequence));
+        }
         http.get(url, (res) => {
             let body = '';
             res.on('data', chunk => body += chunk);
@@ -579,6 +587,14 @@ async function pollTelemetry() {
                     const parsed = JSON.parse(body || '{}');
                     // Collector returns { recentTelemetry: [...] }
                     const items = parsed.recentTelemetry || parsed || [];
+                    if (typeof parsed.latestSequence === 'number') {
+                        lastTelemetrySequence = parsed.latestSequence;
+                    } else if (Array.isArray(items) && items.length > 0) {
+                        const lastItem = items[items.length - 1];
+                        if (lastItem && typeof lastItem.sequence === 'number') {
+                            lastTelemetrySequence = lastItem.sequence;
+                        }
+                    }
                     if (!Array.isArray(items)) return;
                     for (const item of items) {
                         let ruleAlertFired = false;
@@ -667,5 +683,4 @@ setInterval(main, 5 * 60 * 1000); // full analysis every 5 minutes
 setInterval(pollTelemetry, TELEMETRY_POLL_INTERVAL_MS); // poll telemetry frequently
 // kick off immediate telemetry poll
 pollTelemetry();
-
 

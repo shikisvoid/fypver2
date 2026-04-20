@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-16T15:57:28.163Z",
+  "updatedAt": "2026-04-20T11:49:06.305Z",
   "gateways": [
     {
       "gatewayId": "backend-internal-gateway",
@@ -10,7 +10,7 @@
         "hospital-backend-app"
       ],
       "description": "Internal gateway for backend services",
-      "registeredAt": "2026-04-16T12:48:25.884Z"
+      "registeredAt": "2026-04-20T11:47:07.881Z"
     },
     {
       "gatewayId": "external-api-gateway",
@@ -20,7 +20,7 @@
         "hospital-backend-app"
       ],
       "description": "External gateway for hospital services",
-      "registeredAt": "2026-04-16T12:48:29.446Z"
+      "registeredAt": "2026-04-20T11:47:11.916Z"
     }
   ],
   "services": [
@@ -53,7 +53,7 @@
         "/api/users"
       ],
       "requiresIdentity": true,
-      "registeredAt": "2026-04-16T12:48:25.917Z"
+      "registeredAt": "2026-04-20T11:47:07.920Z"
     }
   ],
   "isolatedSegments": [
@@ -61,13 +61,97 @@
       "segmentId": "backend-clinical-segment",
       "serviceId": "hospital-backend-app",
       "reason": "ML_RULE_CORRELATED",
-      "isolatedAt": "2026-04-16T12:55:16.801Z",
+      "isolatedAt": "2026-04-20T11:49:06.304Z",
       "affectedServices": [
         "hospital-backend-app"
       ]
     }
   ],
   "spaAdmissions": [],
-  "issuedGrants": [],
-  "usedSpaNonces": []
+  "issuedGrants": [
+    {
+      "jti": "0e791f11-9553-4570-b803-bf29b0dad0b7",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJob3NwaXRhbC1zZHAtYWNjZXNzLWNvbnRyb2xsZXIiLCJqdGkiOiIwZTc5MWYxMS05NTUzLTQ1NzAtYjgwMy1iZjI5YjBkYWQwYjciLCJzdWIiOiJhZG1pbi1sYXB0b3AtMDEiLCJzZXJ2aWNlSWQiOiJob3NwaXRhbC1iYWNrZW5kLWFwcCIsImVudHJ5R2F0ZXdheUlkIjoiZXh0ZXJuYWwtYXBpLWdhdGV3YXkiLCJpbnRlcm5hbEdhdGV3YXlJZCI6ImJhY2tlbmQtaW50ZXJuYWwtZ2F0ZXdheSIsInBhdGhQcmVmaXhlcyI6WyIvYXBpL3BhdGllbnRzIiwiL2FwaS9hcHBvaW50bWVudHMiLCIvYXBpL3ZpdGFscyIsIi9hcGkvcHJlc2NyaXB0aW9ucyIsIi9hcGkvbGFiIiwiL2FwaS9iaWxsaW5nIiwiL2FwaS9waGFybWFjeSIsIi9hcGkvZmlsZXMiLCIvYXBpL2F1ZGl0IiwiL2FwaS9tb25pdG9yaW5nIiwiL2FwaS9kYXNoYm9hcmQiLCIvYXBpL2RvY3RvciIsIi9hcGkvcmVjZXB0aW9uaXN0IiwiL2FwaS9udXJzZSIsIi9hcGkvYWNjb3VudGFudCIsIi9hcGkvbm90aWZpY2F0aW9ucyIsIi9hcGkvZW5jcnlwdGlvbiIsIi9hcGkvZG9jdG9ycyIsIi9hcGkvdXNlcnMiXSwiY2xpZW50Q2VydENuIjoiYWRtaW4tbGFwdG9wLTAxIiwidXNlciI6eyJlbWFpbCI6ImFkbWluQGhvc3BpdGFsLmNvbSIsInJvbGUiOiJhZG1pbiJ9LCJpYXQiOjE3NzY2ODU3NDUsImV4cCI6MTc3NjY4NjM0NX0.kjbwmSHjzYywUueK4lt4li28IAjrkVXYOZ5DFmjA33A",
+      "clientId": "admin-laptop-01",
+      "serviceId": "hospital-backend-app",
+      "entryGatewayId": "external-api-gateway",
+      "internalGatewayId": "backend-internal-gateway",
+      "pathPrefixes": [
+        "/api/patients",
+        "/api/appointments",
+        "/api/vitals",
+        "/api/prescriptions",
+        "/api/lab",
+        "/api/billing",
+        "/api/pharmacy",
+        "/api/files",
+        "/api/audit",
+        "/api/monitoring",
+        "/api/dashboard",
+        "/api/doctor",
+        "/api/receptionist",
+        "/api/nurse",
+        "/api/accountant",
+        "/api/notifications",
+        "/api/encryption",
+        "/api/doctors",
+        "/api/users"
+      ],
+      "clientCertCn": "admin-laptop-01",
+      "user": {
+        "email": "admin@hospital.com",
+        "role": "admin"
+      },
+      "issuedAt": "2026-04-20T11:49:05.000Z",
+      "expiresAt": "2026-04-20T11:59:05.000Z",
+      "expiresAtMs": 1776686345000,
+      "revokedAt": "2026-04-20T11:49:06.234Z",
+      "revokeReason": "ML_RULE_CORRELATED"
+    },
+    {
+      "jti": "85c00dcb-50f1-41a0-ad90-4a50d598a274",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJob3NwaXRhbC1zZHAtYWNjZXNzLWNvbnRyb2xsZXIiLCJqdGkiOiI4NWMwMGRjYi01MGYxLTQxYTAtYWQ5MC00YTUwZDU5OGEyNzQiLCJzdWIiOiJhZG1pbi1sYXB0b3AtMDEiLCJzZXJ2aWNlSWQiOiJob3NwaXRhbC1iYWNrZW5kLWFwcCIsImVudHJ5R2F0ZXdheUlkIjoiZXh0ZXJuYWwtYXBpLWdhdGV3YXkiLCJpbnRlcm5hbEdhdGV3YXlJZCI6ImJhY2tlbmQtaW50ZXJuYWwtZ2F0ZXdheSIsInBhdGhQcmVmaXhlcyI6WyIvYXBpL3BhdGllbnRzIiwiL2FwaS9hcHBvaW50bWVudHMiLCIvYXBpL3ZpdGFscyIsIi9hcGkvcHJlc2NyaXB0aW9ucyIsIi9hcGkvbGFiIiwiL2FwaS9iaWxsaW5nIiwiL2FwaS9waGFybWFjeSIsIi9hcGkvZmlsZXMiLCIvYXBpL2F1ZGl0IiwiL2FwaS9tb25pdG9yaW5nIiwiL2FwaS9kYXNoYm9hcmQiLCIvYXBpL2RvY3RvciIsIi9hcGkvcmVjZXB0aW9uaXN0IiwiL2FwaS9udXJzZSIsIi9hcGkvYWNjb3VudGFudCIsIi9hcGkvbm90aWZpY2F0aW9ucyIsIi9hcGkvZW5jcnlwdGlvbiIsIi9hcGkvZG9jdG9ycyIsIi9hcGkvdXNlcnMiXSwiY2xpZW50Q2VydENuIjoiYWRtaW4tbGFwdG9wLTAxIiwidXNlciI6eyJlbWFpbCI6ImFkbWluQGhvc3BpdGFsLmNvbSIsInJvbGUiOiJhZG1pbiJ9LCJpYXQiOjE3NzY2ODU2NjksImV4cCI6MTc3NjY4NjI2OX0.tOBBwy59Iygkx5F3uNLRFP7hg_vBjqBUKfOzuK0Lj4w",
+      "clientId": "admin-laptop-01",
+      "serviceId": "hospital-backend-app",
+      "entryGatewayId": "external-api-gateway",
+      "internalGatewayId": "backend-internal-gateway",
+      "pathPrefixes": [
+        "/api/patients",
+        "/api/appointments",
+        "/api/vitals",
+        "/api/prescriptions",
+        "/api/lab",
+        "/api/billing",
+        "/api/pharmacy",
+        "/api/files",
+        "/api/audit",
+        "/api/monitoring",
+        "/api/dashboard",
+        "/api/doctor",
+        "/api/receptionist",
+        "/api/nurse",
+        "/api/accountant",
+        "/api/notifications",
+        "/api/encryption",
+        "/api/doctors",
+        "/api/users"
+      ],
+      "clientCertCn": "admin-laptop-01",
+      "user": {
+        "email": "admin@hospital.com",
+        "role": "admin"
+      },
+      "issuedAt": "2026-04-20T11:47:49.000Z",
+      "expiresAt": "2026-04-20T11:57:49.000Z",
+      "expiresAtMs": 1776686269000,
+      "revokedAt": "2026-04-20T11:49:05.070Z",
+      "revokeReason": "segment_isolated:backend-clinical-segment:demo_segment_isolation"
+    }
+  ],
+  "usedSpaNonces": [
+    {
+      "nonceKey": "admin-laptop-01:e5ec17baf5b8a04fbefa20f4",
+      "expiresAtMs": 1776685962174
+    }
+  ]
 }

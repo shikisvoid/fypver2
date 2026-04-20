@@ -375,7 +375,7 @@ Write-Host "PASS: quarantine-driven SDP revocation blocked the old session ($cod
 Write-Host "[12/13] Verify controller and audit state..." -ForegroundColor Cyan
 $gw = Invoke-CurlJson -Url "$gatewayBase/health" -UseMtls
 $controller = Invoke-RestMethod -Uri "$controllerBase/health" -Method GET
-$telemetry = Invoke-RestMethod -Uri "http://127.0.0.1:9090/telemetry" -Method GET
+$telemetry = Invoke-RestMethod -Uri "http://127.0.0.1:9093/telemetry" -Method GET
 $isolations = Invoke-RestMethod -Uri "http://127.0.0.1:4100/isolations" -Method GET
 $audit = Invoke-RestMethod -Uri "$controllerBase/audit/recent?limit=12" -Method GET -Headers @{ "x-registration-token" = $registrationToken }
 Write-Host "Gateway TLS enabled: $($gw.tls)" -ForegroundColor Yellow

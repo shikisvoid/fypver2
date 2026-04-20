@@ -12,9 +12,9 @@ scrape_configs:
   # Network monitoring metrics
   - job_name: 'network-monitoring'
     static_configs:
-      - targets: ['hospital-monitor:9090']
+      - targets: ['hospital-exporter:9092']
         labels:
-          service: 'network-monitor'
+          service: 'network-exporter'
           network: 'both'
 
   # Backend services
@@ -47,4 +47,3 @@ scrape_configs:
       - targets: ['localhost:9091']
         labels:
           service: 'prometheus'
-

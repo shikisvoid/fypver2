@@ -5,6 +5,7 @@ $repoRoot = $PSScriptRoot
 $workspaceRoot = (Resolve-Path (Join-Path $repoRoot "..\..")).Path
 $monitorLogsDir = Join-Path $workspaceRoot "docker-volumes\monitor-logs"
 $spaAuditLog = Join-Path $repoRoot "spa-controller\audit.log"
+$spaDemoAuditLog = Join-Path $repoRoot "spa-controller\audit-demo.log"
 $spaStateFile = Join-Path $repoRoot "spa-controller\state.json"
 $spaStateTempFile = Join-Path $repoRoot "spa-controller\state.json.tmp"
 $monitorTelemetryLog = Join-Path $monitorLogsDir "telemetry.log"
@@ -38,6 +39,7 @@ docker compose -f $composeFile down | Out-Null
 
 Write-Host "[2/5] Clearing SPA controller persisted state..." -ForegroundColor Yellow
 Remove-Item -LiteralPath $spaAuditLog -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $spaDemoAuditLog -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $spaStateFile -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $spaStateTempFile -Force -ErrorAction SilentlyContinue
 

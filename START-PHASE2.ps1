@@ -95,7 +95,7 @@ Write-Host 'Phase 2 - Monitoring and Response:' -ForegroundColor Yellow
 Write-Host "  Prometheus:      $HostBase`:9091" -ForegroundColor White
 Write-Host "  Grafana:         $HostBase`:3002 (admin/admin)" -ForegroundColor White
 Write-Host "  Response Ctrl:   $HostBase`:4100" -ForegroundColor White
-Write-Host "  Telemetry API:   $HostBase`:9090/telemetry" -ForegroundColor White
+Write-Host "  Telemetry API:   $HostBase`:9093/telemetry" -ForegroundColor White
 Write-Host ""
 Write-Host "Logs Location:" -ForegroundColor Yellow
 Write-Host '  D:\PHASE1\docker-volumes\monitor-logs\' -ForegroundColor White
@@ -117,7 +117,7 @@ Write-Host "View Isolations:" -ForegroundColor Yellow
 Write-Host '  curl.exe -4 http://127.0.0.1:4100/isolations' -ForegroundColor Gray
 Write-Host ""
 Write-Host "View Telemetry:" -ForegroundColor Yellow
-Write-Host '  curl.exe -4 http://127.0.0.1:9090/telemetry' -ForegroundColor Gray
+Write-Host '  curl.exe -4 http://127.0.0.1:9093/telemetry' -ForegroundColor Gray
 Write-Host ""
 Write-Host "View Logs:" -ForegroundColor Yellow
 Write-Host '  docker logs hospital-monitor --tail=50' -ForegroundColor Gray
@@ -148,6 +148,5 @@ Write-Host ""
 Write-Host "To stop all services:" -ForegroundColor Yellow
 Write-Host "  docker compose -f docker-compose.sdp.yml down" -ForegroundColor White
 Write-Host ""
-
 
 

@@ -1,7 +1,7 @@
 ﻿TEST1 : STARTING THE EDR AGENT 
 cd agents/edr-prototype/node-agent
 npm install
-$env:TARGET="http://localhost:9090/ingest/telemetry"
+$env:TARGET="http://localhost:9093/ingest/telemetry"
 $env:HOST_ID="test-endpoint-1"
 $env:INTERVAL_MS="2000"
 node index.js
@@ -9,7 +9,7 @@ node index.js
 **Verification:**
 ```powershell
 # Check telemetry endpoint
-curl.exe http://localhost:9090/telemetry
+curl.exe http://localhost:9093/telemetry
 
 
  Test 2: SDP Identity-Aware Access Enforcement
@@ -120,4 +120,3 @@ node send-exfil-telemetry.js
 
 # Check controller received alert
 curl http://localhost:4100/isolations
-

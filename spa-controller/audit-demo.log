@@ -1,0 +1,267 @@
+==============================================================================
+2026-04-20T11:47:07.891Z  GATEWAY_REGISTERED
+Category : registration
+Outcome  : registered
+Summary  : Gateway backend-internal-gateway registered
+Target   : backend-internal-gateway
+Details  :
+  - gatewayId: "backend-internal-gateway"
+  - registeredAt: "2026-04-20T11:47:07.881Z"
+==============================================================================
+2026-04-20T11:47:07.935Z  SERVICE_REGISTERED
+Category : registration
+Outcome  : registered
+Summary  : Service hospital-backend-app registered in segment backend-clinical-segment
+Target   : backend-clinical-segment
+Details  :
+  - serviceId: "hospital-backend-app"
+  - segmentId: "backend-clinical-segment"
+  - entryGatewayId: "external-api-gateway"
+  - internalGatewayId: "backend-internal-gateway"
+  - registeredAt: "2026-04-20T11:47:07.920Z"
+==============================================================================
+2026-04-20T11:47:11.948Z  GATEWAY_REGISTERED
+Category : registration
+Outcome  : registered
+Summary  : Gateway external-api-gateway registered
+Target   : external-api-gateway
+Details  :
+  - gatewayId: "external-api-gateway"
+  - registeredAt: "2026-04-20T11:47:11.916Z"
+==============================================================================
+2026-04-20T11:47:42.204Z  SPA_ADMISSION_ISSUED
+Category : access
+Outcome  : allowed
+Summary  : SPA admission created for admin-laptop-01
+Actor    : admin-laptop-01
+Details  :
+  - clientId: "admin-laptop-01"
+  - admittedAt: "2026-04-20T11:47:42.188Z"
+  - expiresAt: "2026-04-20T11:52:42.188Z"
+==============================================================================
+2026-04-20T11:47:43.437Z  SPA_ADMISSION_VALIDATED
+Category : access
+Outcome  : allowed
+Summary  : SPA admission validated for admin-laptop-01
+Actor    : admin-laptop-01
+Details  :
+  - clientId: "admin-laptop-01"
+  - clientCertCn: "admin-laptop-01"
+  - sourceIp: "172.29.0.1"
+  - admittedAt: "2026-04-20T11:47:42.188Z"
+  - expiresAt: "2026-04-20T11:52:42.188Z"
+==============================================================================
+2026-04-20T11:47:44.361Z  SPA_ADMISSION_VALIDATED
+Category : access
+Outcome  : allowed
+Summary  : SPA admission validated for admin-laptop-01
+Actor    : admin-laptop-01
+Details  :
+  - clientId: "admin-laptop-01"
+  - clientCertCn: "admin-laptop-01"
+  - sourceIp: "172.29.0.1"
+  - admittedAt: "2026-04-20T11:47:42.188Z"
+  - expiresAt: "2026-04-20T11:52:42.188Z"
+==============================================================================
+2026-04-20T11:47:45.054Z  SPA_ADMISSION_VALIDATED
+Category : access
+Outcome  : allowed
+Summary  : SPA admission validated for admin-laptop-01
+Actor    : admin-laptop-01
+Details  :
+  - clientId: "admin-laptop-01"
+  - clientCertCn: "admin-laptop-01"
+  - sourceIp: "172.29.0.1"
+  - admittedAt: "2026-04-20T11:47:42.188Z"
+  - expiresAt: "2026-04-20T11:52:42.188Z"
+==============================================================================
+2026-04-20T11:47:45.780Z  SPA_ADMISSION_VALIDATED
+Category : access
+Outcome  : allowed
+Summary  : SPA admission validated for admin-laptop-01
+Actor    : admin-laptop-01
+Details  :
+  - clientId: "admin-laptop-01"
+  - clientCertCn: "admin-laptop-01"
+  - sourceIp: "172.29.0.1"
+  - admittedAt: "2026-04-20T11:47:42.188Z"
+  - expiresAt: "2026-04-20T11:52:42.188Z"
+==============================================================================
+2026-04-20T11:47:47.123Z  SPA_ADMISSION_VALIDATED
+Category : access
+Outcome  : allowed
+Summary  : SPA admission validated for admin-laptop-01
+Actor    : admin-laptop-01
+Details  :
+  - clientId: "admin-laptop-01"
+  - clientCertCn: "admin-laptop-01"
+  - sourceIp: "172.29.0.1"
+  - admittedAt: "2026-04-20T11:47:42.188Z"
+  - expiresAt: "2026-04-20T11:52:42.188Z"
+==============================================================================
+2026-04-20T11:47:48.968Z  POLICY_DENIED
+Category : access
+Outcome  : denied
+Summary  : Policy denied hospital-backend-app for accountant@hospital.com (accountant)
+Actor    : accountant@hospital.com (accountant)
+Target   : hospital-backend-app
+Reason   : role_denied
+Details  :
+  - serviceId: "hospital-backend-app"
+  - pathname: "/api/audit"
+  - method: "GET"
+  - reason: "role_denied"
+  - user: {"email":"accountant@hospital.com","role":"accountant"}
+==============================================================================
+2026-04-20T11:47:49.080Z  GRANT_ISSUED
+Category : access
+Outcome  : allowed
+Summary  : Grant issued to admin-laptop-01 for hospital-backend-app as admin@hospital.com
+Actor    : admin@hospital.com (admin)
+Target   : hospital-backend-app
+Details  :
+  - grantId: "85c00dcb-50f1-41a0-ad90-4a50d598a274"
+  - clientId: "admin-laptop-01"
+  - serviceId: "hospital-backend-app"
+  - user: {"email":"admin@hospital.com","role":"admin"}
+  - expiresAt: "2026-04-20T11:57:49.000Z"
+==============================================================================
+2026-04-20T11:47:49.910Z  SPA_ADMISSION_VALIDATED
+Category : access
+Outcome  : allowed
+Summary  : SPA admission validated for admin-laptop-01
+Actor    : admin-laptop-01
+Details  :
+  - clientId: "admin-laptop-01"
+  - clientCertCn: "admin-laptop-01"
+  - sourceIp: "172.29.0.1"
+  - admittedAt: "2026-04-20T11:47:42.188Z"
+  - expiresAt: "2026-04-20T11:52:42.188Z"
+==============================================================================
+2026-04-20T11:47:49.928Z  GATEWAY_AUTHORIZED
+Category : access
+Outcome  : allowed
+Summary  : Gateway external-api-gateway allowed /api/patients for admin@hospital.com (admin)
+Actor    : admin@hospital.com (admin)
+Target   : hospital-backend-app
+Details  :
+  - gatewayId: "external-api-gateway"
+  - pathname: "/api/patients"
+  - clientCertCn: "admin-laptop-01"
+  - serviceId: "hospital-backend-app"
+  - grantId: "85c00dcb-50f1-41a0-ad90-4a50d598a274"
+  - nextGatewayId: "backend-internal-gateway"
+  - user: {"email":"admin@hospital.com","role":"admin"}
+==============================================================================
+2026-04-20T11:47:50.043Z  GATEWAY_AUTHORIZED
+Category : access
+Outcome  : allowed
+Summary  : Gateway backend-internal-gateway allowed /api/patients for admin@hospital.com (admin)
+Actor    : admin@hospital.com (admin)
+Target   : hospital-backend-app
+Details  :
+  - gatewayId: "backend-internal-gateway"
+  - pathname: "/api/patients"
+  - clientCertCn: undefined
+  - serviceId: "hospital-backend-app"
+  - grantId: "85c00dcb-50f1-41a0-ad90-4a50d598a274"
+  - nextGatewayId: null
+  - user: {"email":"admin@hospital.com","role":"admin"}
+==============================================================================
+2026-04-20T11:49:05.081Z  SEGMENT_ISOLATED
+Category : segmentation
+Outcome  : isolated
+Summary  : Segment backend-clinical-segment isolated for hospital-backend-app because demo_segment_isolation
+Target   : backend-clinical-segment
+Reason   : demo_segment_isolation
+Details  :
+  - segmentId: "backend-clinical-segment"
+  - serviceId: "hospital-backend-app"
+  - reason: "demo_segment_isolation"
+  - isolatedAt: "2026-04-20T11:49:05.070Z"
+  - affectedServices: ["hospital-backend-app"]
+==============================================================================
+2026-04-20T11:49:05.132Z  GRANT_DENIED
+Category : access
+Outcome  : denied
+Summary  : Grant denied for hospital-backend-app on /api/patients because segment_isolated
+Target   : backend-clinical-segment
+Reason   : segment_isolated
+Details  :
+  - serviceId: "hospital-backend-app"
+  - pathname: "/api/patients"
+  - method: "GET"
+  - segmentId: "backend-clinical-segment"
+  - reason: "segment_isolated"
+==============================================================================
+2026-04-20T11:49:05.417Z  SEGMENT_RELEASED
+Category : segmentation
+Outcome  : released
+Summary  : Segment backend-clinical-segment released and access can resume
+Target   : backend-clinical-segment
+Reason   : demo_segment_release
+Details  :
+  - segmentId: "backend-clinical-segment"
+  - reason: "demo_segment_release"
+  - releasedAt: "2026-04-20T11:49:05.417Z"
+  - previousIsolation: {"segmentId":"backend-clinical-segment","serviceId":"hospital-backend-app","reason":"demo_segment_isolation","isolatedAt":"2026-04-20T11:49:05.070Z","affectedServices":["hospital-backend-app"]}
+==============================================================================
+2026-04-20T11:49:05.533Z  GRANT_ISSUED
+Category : access
+Outcome  : allowed
+Summary  : Grant issued to admin-laptop-01 for hospital-backend-app as admin@hospital.com
+Actor    : admin@hospital.com (admin)
+Target   : hospital-backend-app
+Details  :
+  - grantId: "0e791f11-9553-4570-b803-bf29b0dad0b7"
+  - clientId: "admin-laptop-01"
+  - serviceId: "hospital-backend-app"
+  - user: {"email":"admin@hospital.com","role":"admin"}
+  - expiresAt: "2026-04-20T11:59:05.000Z"
+==============================================================================
+2026-04-20T11:49:06.263Z  ACCESS_REVOKED
+Category : response
+Outcome  : revoked
+Summary  : Access revoked for admin@hospital.com; admissions=1, grants=1
+Actor    : admin@hospital.com
+Reason   : ML_RULE_CORRELATED
+Details  :
+  - clientId: "admin-laptop-01"
+  - reason: "ML_RULE_CORRELATED"
+==============================================================================
+2026-04-20T11:49:06.341Z  SEGMENT_ISOLATED
+Category : segmentation
+Outcome  : isolated
+Summary  : Segment backend-clinical-segment isolated for hospital-backend-app because ML_RULE_CORRELATED
+Target   : backend-clinical-segment
+Reason   : ML_RULE_CORRELATED
+Details  :
+  - segmentId: "backend-clinical-segment"
+  - serviceId: "hospital-backend-app"
+  - reason: "ML_RULE_CORRELATED"
+  - isolatedAt: "2026-04-20T11:49:06.304Z"
+  - affectedServices: ["hospital-backend-app"]
+==============================================================================
+2026-04-20T11:49:06.622Z  SPA_ADMISSION_DENIED
+Category : access
+Outcome  : denied
+Summary  : SPA admission denied for admin-laptop-01 because missing_spa_admission
+Actor    : admin-laptop-01
+Reason   : missing_spa_admission
+Details  :
+  - clientId: "admin-laptop-01"
+  - reason: "missing_spa_admission"
+  - clientCertCn: "admin-laptop-01"
+  - sourceIp: "172.29.0.1"
+==============================================================================
+2026-04-20T11:49:06.750Z  GRANT_DENIED
+Category : access
+Outcome  : denied
+Summary  : Grant denied for hospital-backend-app on n/a because missing_spa_admission
+Actor    : admin-laptop-01
+Target   : hospital-backend-app
+Reason   : missing_spa_admission
+Details  :
+  - clientId: "admin-laptop-01"
+  - serviceId: "hospital-backend-app"
+  - reason: "missing_spa_admission"

@@ -22,6 +22,7 @@ $caCert = "certs\ca\ca.crt"
 $clientCert = "certs\clients\admin-laptop-01.crt"
 $clientKey = "certs\clients\admin-laptop-01.key"
 $auditLogFile = "spa-controller\audit.log"
+$demoAuditLogFile = "spa-controller\audit-demo.log"
 $stateFile = "spa-controller\state.json"
 
 function Invoke-NodeMtls {
@@ -317,6 +318,9 @@ function Reset-DemoArtifacts {
     if (Test-Path $auditLogFile) {
         Remove-Item -LiteralPath $auditLogFile -Force -ErrorAction SilentlyContinue
     }
+    if (Test-Path $demoAuditLogFile) {
+        Remove-Item -LiteralPath $demoAuditLogFile -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $stateFile) {
         Remove-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue
     }
@@ -330,8 +334,12 @@ function Show-RecentAudit {
     $audit = Invoke-RestMethod -Uri "$controllerBase/audit/recent?limit=$Limit" -Method GET -Headers @{ "x-registration-token" = $registrationToken }
     Write-Host "Recent SDP audit events:" -ForegroundColor Magenta
     foreach ($event in $audit.events) {
-        $details = $event.details | ConvertTo-Json -Compress
-        Write-Host " - $($event.eventType) :: $details" -ForegroundColor Gray
+        $summary = if ($event.summary) { $event.summary } else { $event.details | ConvertTo-Json -Compress }
+        $meta = @()
+        if ($event.category) { $meta += $event.category }
+        if ($event.outcome) { $meta += $event.outcome }
+        $metaText = if ($meta.Count -gt 0) { " [$($meta -join ' / ')]" } else { '' }
+        Write-Host " - $($event.eventType)$metaText :: $summary" -ForegroundColor Gray
     }
 }
 
@@ -428,15 +436,17 @@ Pause-Demo
 
 Show-Step "Step 1: Segmented Network Layout" "We show that the edge gateway, internal gateway, backend, and database now sit on different trust-zone networks."
 Show-ContainerNetworks -Containers @("hospital-api-gateway", "hospital-backend-internal-gateway", "hospital-backend", "hospital-db")
-$edgeToBackend = Test-ContainerTcpReachability -Container "hospital-api-gateway" -TargetHost "hospital-backend" -Port 3000
-$internalToBackend = Test-ContainerTcpReachability -Container "hospital-backend-internal-gateway" -TargetHost "hospital-backend" -Port 3000
+$edgeToBackend = Test-ContainerTcpReachability -Container "hospital-api-gateway" -TargetHost "backend" -Port 3000
+$internalToBackend = Test-ContainerTcpReachability -Container "hospital-backend-internal-gateway" -TargetHost "backend" -Port 3000
 Show-ExpectationResult -Label "API gateway -> backend" -Actual $edgeToBackend -Expected $false
 Show-ExpectationResult -Label "Internal gateway -> backend" -Actual $internalToBackend -Expected $true
 Pause-Demo
 
 Show-Step "Step 2: No mTLS Certificate" "Without a client certificate, the connection is rejected before the protected SDP flow can continue."
 $noMtls = Get-NoMtlsCurlCode -Url "$gatewayBase/api/health"
-Write-Host "Result: curl exit=$($noMtls.exitCode), http=$($noMtls.httpCode)" -ForegroundColor Green
+Write-Host "Result: BLOCKED - the gateway rejected the TLS connection because no client certificate was presented." -ForegroundColor Green
+Write-Host "Meaning: device trust failed at the mTLS layer, so the request never reached SDP access evaluation." -ForegroundColor Yellow
+Write-Host "Technical proof: curl exit=$($noMtls.exitCode), http=$($noMtls.httpCode)" -ForegroundColor DarkGray
 Pause-Demo
 
 Show-Step "Step 3: mTLS But No SPA" "The device has a certificate, but it never performed an SPA knock, so the gateway denies the request."
@@ -538,4 +548,5 @@ Pause-Demo "Demo complete. Press Enter to show final reminders"
 Write-Host ""
 Write-Host "Demo finished." -ForegroundColor Green
 Write-Host "Audit log file: $auditLogFile" -ForegroundColor Yellow
+Write-Host "Demo audit file: $demoAuditLogFile" -ForegroundColor Yellow
 Write-Host "To stop the stack: docker compose -f $composeFile down" -ForegroundColor Yellow
